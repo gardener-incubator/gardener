@@ -1,7 +1,10 @@
+# NOTE: When making changes to default values & validation, please adjust the API comments and validation
+# in package landscaper/pkg/controlplane/apis/imports
 global:
   # Gardener API server configuration values
   apiserver:
     enabled: true
+    clusterIdentity: garden-cluster-identity
     serviceEnabled: true
     replicaCount: 1
     serviceAccountName: gardener-apiserver
@@ -252,7 +255,6 @@ global:
  #      truncateMaxBatchSize: 10485760
  #      truncateMaxEventSize: 102400
  #      version: audit.k8s.io/v1
- #  clusterIdentity: garden-cluster-identity
   # Gardener admission controller configuration values
   admission:
     enabled: true
@@ -269,6 +271,8 @@ global:
       limits:
         cpu: 300m
         memory: 512Mi
+  # podAnnotations: # YAML formated annotations used for pod template
+  # podLabels: # YAML formated labels used for pod template
     vpa: false
     config:
       gardenClientConnection:
@@ -405,10 +409,6 @@ global:
           bindAddress: 0.0.0.0
           port: 2719
           tls:
-            caBundle: |
-              -----BEGIN CERTIFICATE-----
-              ...
-              -----END CERTIFICATE-----
             crt: |
               -----BEGIN CERTIFICATE-----
               ...

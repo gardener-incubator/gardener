@@ -19,11 +19,34 @@ import (
 	"strings"
 
 	apisconfig "github.com/gardener/gardener/pkg/admissioncontroller/apis/config"
-
+	apisconfigv1alpha1 "github.com/gardener/gardener/pkg/admissioncontroller/apis/config/v1alpha1"
 	authenticationv1 "k8s.io/api/authentication/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apiserver/pkg/authentication/serviceaccount"
 )
+
+var scheme *runtime.Scheme
+
+func init() {
+	scheme = runtime.NewScheme()
+	utilruntime.Must(apisconfigv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(apisconfig.AddToScheme(scheme))
+}
+
+// ConvertAdmissionControllerConfiguration converts the given object to an internal AdmissionControllerConfiguration version.
+func ConvertAdmissionControllerConfiguration(obj runtime.Object) (*apisconfig.AdmissionControllerConfiguration, error) {
+	obj, err := scheme.ConvertToVersion(obj, apisconfig.SchemeGroupVersion)
+	if err != nil {
+		return nil, err
+	}
+	result, ok := obj.(*apisconfig.AdmissionControllerConfiguration)
+	if !ok {
+		return nil, fmt.Errorf("could not convert AdmissionControllerConfiguration to the internal version")
+	}
+	return result, nil
+}
 
 // APIGroupMatches returns `true` if the given group has a match in the given limit.
 func APIGroupMatches(limit apisconfig.ResourceLimit, group string) bool {

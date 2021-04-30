@@ -28,7 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation/field"
 )
 
-// ValidateLandscaperImports validates a imports object.
+// ValidateLandscaperImports validates an imports object.
 func ValidateLandscaperImports(imports *imports.Imports) field.ErrorList {
 	allErrs := field.ErrorList{}
 

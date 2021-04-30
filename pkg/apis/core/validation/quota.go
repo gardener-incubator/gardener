@@ -66,7 +66,7 @@ func ValidateQuotaSpec(quotaSpec *core.QuotaSpec, fldPath *field.Path) field.Err
 		if !isValidQuotaMetric(corev1.ResourceName(k)) {
 			allErrs = append(allErrs, field.Invalid(keyPath, v.String(), fmt.Sprintf("%s is no supported quota metric", string(k))))
 		}
-		allErrs = append(allErrs, validateResourceQuantityValue(string(k), v, keyPath)...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue(string(k), v, keyPath)...)
 	}
 
 	return allErrs
@@ -86,8 +86,8 @@ func isValidQuotaMetric(metric corev1.ResourceName) bool {
 	return false
 }
 
-// validateResourceQuantityValue validates the value of a resource quantity.
-func validateResourceQuantityValue(key string, value resource.Quantity, fldPath *field.Path) field.ErrorList {
+// ValidateResourceQuantityValue validates the value of a resource quantity.
+func ValidateResourceQuantityValue(key string, value resource.Quantity, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 
 	if value.Cmp(resource.Quantity{}) < 0 {
