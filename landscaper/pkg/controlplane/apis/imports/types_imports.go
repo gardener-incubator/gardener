@@ -53,7 +53,7 @@ type Imports struct {
 	DefaultDomains []DNS
 	// Alerting optionally configures the Gardener installation with alerting
 	Alerting []Alerting
-	// 	OpenVPNDiffieHellmanKey is the Diffie-Hellman key used for OpenVPN.
+	// OpenVPNDiffieHellmanKey is the Diffie-Hellman key used for OpenVPN.
 	// The VPN bridge from a Shoot's control plane running in the Seed cluster to the worker nodes of the Shoots is based
 	// on OpenVPN. It requires a Diffie Hellman key.
 	// If no such key is explicitly provided as secret in the garden namespace
@@ -131,7 +131,7 @@ type Alerting struct {
 	// only required for authentication types none, basic and certificate
 	Url *string
 
-	// SMTP auth
+	// SMTP Auth
 	// ToEmailAddress is the email address to send alerts to
 	ToEmailAddress *string
 	// FromEmailAddress is the email address to send alerts from
@@ -145,13 +145,13 @@ type Alerting struct {
 	// AuthUsername is the password used for authentication when using SMTP
 	AuthPassword *string
 
-	// basic auth
+	// Basic Auth
 	// Username is the username to use for basic authentication with the external (non-Gardener managed) alert manager
 	Username *string
 	// Password is the password to use for basic authentication with the external (non-Gardener managed) alert manager
 	Password *string
 
-	// certificate  auth
+	// Certificate Auth
 	// CaCert is the CA certificate the TLS certificate presented at the url endpoint
 	// of the external (non-Gardener managed) alert manager needs to be signed with
 	CaCert *string
