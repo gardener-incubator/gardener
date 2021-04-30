@@ -3,6 +3,7 @@
 global:
   # Gardener API server configuration values
   apiserver:
+    clusterIdentity: garden-cluster-identity
     etcd:
       useSidecar: true
     # Don't care about certificates for local development scenario

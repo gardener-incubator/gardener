@@ -1086,19 +1086,19 @@ func validateKubeletConfigEviction(eviction *core.KubeletConfigEviction, fldPath
 func validateKubeletConfigEvictionMinimumReclaim(eviction *core.KubeletConfigEvictionMinimumReclaim, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if eviction.MemoryAvailable != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("memoryAvailable", *eviction.MemoryAvailable, fldPath.Child("memoryAvailable"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("memoryAvailable", *eviction.MemoryAvailable, fldPath.Child("memoryAvailable"))...)
 	}
 	if eviction.ImageFSAvailable != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("imagefsAvailable", *eviction.ImageFSAvailable, fldPath.Child("imagefsAvailable"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("imagefsAvailable", *eviction.ImageFSAvailable, fldPath.Child("imagefsAvailable"))...)
 	}
 	if eviction.ImageFSInodesFree != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("imagefsInodesFree", *eviction.ImageFSInodesFree, fldPath.Child("imagefsInodesFree"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("imagefsInodesFree", *eviction.ImageFSInodesFree, fldPath.Child("imagefsInodesFree"))...)
 	}
 	if eviction.NodeFSAvailable != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("nodefsAvailable", *eviction.NodeFSAvailable, fldPath.Child("nodefsAvailable"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("nodefsAvailable", *eviction.NodeFSAvailable, fldPath.Child("nodefsAvailable"))...)
 	}
 	if eviction.ImageFSInodesFree != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("imagefsInodesFree", *eviction.ImageFSInodesFree, fldPath.Child("imagefsInodesFree"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("imagefsInodesFree", *eviction.ImageFSInodesFree, fldPath.Child("imagefsInodesFree"))...)
 	}
 	return allErrs
 }
@@ -1116,16 +1116,16 @@ func validateKubeletConfigEvictionSoftGracePeriod(eviction *core.KubeletConfigEv
 func validateKubeletConfigReserved(reserved *core.KubeletConfigReserved, fldPath *field.Path) field.ErrorList {
 	allErrs := field.ErrorList{}
 	if reserved.CPU != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("cpu", *reserved.CPU, fldPath.Child("cpu"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("cpu", *reserved.CPU, fldPath.Child("cpu"))...)
 	}
 	if reserved.Memory != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("memory", *reserved.Memory, fldPath.Child("memory"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("memory", *reserved.Memory, fldPath.Child("memory"))...)
 	}
 	if reserved.EphemeralStorage != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("ephemeralStorage", *reserved.EphemeralStorage, fldPath.Child("ephemeralStorage"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("ephemeralStorage", *reserved.EphemeralStorage, fldPath.Child("ephemeralStorage"))...)
 	}
 	if reserved.PID != nil {
-		allErrs = append(allErrs, validateResourceQuantityValue("pid", *reserved.PID, fldPath.Child("pid"))...)
+		allErrs = append(allErrs, ValidateResourceQuantityValue("pid", *reserved.PID, fldPath.Child("pid"))...)
 	}
 	return allErrs
 }
@@ -1352,7 +1352,7 @@ func ValidateResourceQuantityOrPercent(valuePtr *string, fldPath *field.Path, ke
 	value := *valuePtr
 	// check for resource quantity
 	if quantity, err := resource.ParseQuantity(value); err == nil {
-		if len(validateResourceQuantityValue(key, quantity, fldPath)) == 0 {
+		if len(ValidateResourceQuantityValue(key, quantity, fldPath)) == 0 {
 			return allErrs
 		}
 	}
