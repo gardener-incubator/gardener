@@ -54,6 +54,8 @@ const (
 	VertexTypeShoot
 	// VertexTypeShootState is a constant for a 'ShootState' vertex.
 	VertexTypeShootState
+	// VertexTypeShootExtensionStatus is a constant for a 'ShootExtensionStatus' vertex.
+	VertexTypeShootExtensionStatus
 )
 
 var vertexTypes = map[VertexType]string{
@@ -74,6 +76,7 @@ var vertexTypes = map[VertexType]string{
 	VertexTypeSeed:                      "Seed",
 	VertexTypeShoot:                     "Shoot",
 	VertexTypeShootState:                "ShootState",
+	VertexTypeShootExtensionStatus:      "ShootExtensionStatus",
 }
 
 type vertex struct {

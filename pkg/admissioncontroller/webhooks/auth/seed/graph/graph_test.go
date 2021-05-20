@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sync"
 
+	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	gardenoperationsv1alpha1 "github.com/gardener/gardener/pkg/apis/operations/v1alpha1"
 	seedmanagementv1alpha1 "github.com/gardener/gardener/pkg/apis/seedmanagement/v1alpha1"
@@ -57,6 +58,7 @@ var _ = Describe("graph", func() {
 		fakeInformerControllerInstallation    *controllertest.FakeInformer
 		fakeInformerManagedSeed               *controllertest.FakeInformer
 		fakeInformerShootState                *controllertest.FakeInformer
+		fakeInformerShootExtensionStatus      *controllertest.FakeInformer
 		fakeInformerLease                     *controllertest.FakeInformer
 		fakeInformerCertificateSigningRequest *controllertest.FakeInformer
 		fakeInformers                         *informertest.FakeInformers
@@ -94,6 +96,8 @@ var _ = Describe("graph", func() {
 
 		shootState1 *metav1.PartialObjectMetadata
 
+		shootExtensionStatus1 *gardencorev1alpha1.ShootExtensionStatus
+
 		lease1 *coordinationv1.Lease
 
 		seedNameInCSR = "myseed"
@@ -114,6 +118,7 @@ var _ = Describe("graph", func() {
 		fakeInformerControllerInstallation = &controllertest.FakeInformer{}
 		fakeInformerManagedSeed = &controllertest.FakeInformer{}
 		fakeInformerShootState = &controllertest.FakeInformer{}
+		fakeInformerShootExtensionStatus = &controllertest.FakeInformer{}
 		fakeInformerLease = &controllertest.FakeInformer{}
 		fakeInformerCertificateSigningRequest = &controllertest.FakeInformer{}
 
@@ -130,6 +135,7 @@ var _ = Describe("graph", func() {
 				gardencorev1beta1.SchemeGroupVersion.WithKind("ControllerInstallation"):      fakeInformerControllerInstallation,
 				seedmanagementv1alpha1.SchemeGroupVersion.WithKind("ManagedSeed"):            fakeInformerManagedSeed,
 				metav1.SchemeGroupVersion.WithKind("PartialObjectMetadata"):                  fakeInformerShootState,
+				gardencorev1alpha1.SchemeGroupVersion.WithKind("ShootExtensionStatus"):       fakeInformerShootExtensionStatus,
 				coordinationv1.SchemeGroupVersion.WithKind("Lease"):                          fakeInformerLease,
 				certificatesv1beta1.SchemeGroupVersion.WithKind("CertificateSigningRequest"): fakeInformerCertificateSigningRequest,
 			},
@@ -225,6 +231,10 @@ var _ = Describe("graph", func() {
 
 		shootState1 = &metav1.PartialObjectMetadata{
 			ObjectMeta: metav1.ObjectMeta{Namespace: "shootstate1ns", Name: "shootstate1"},
+		}
+
+		shootExtensionStatus1 = &gardencorev1alpha1.ShootExtensionStatus{
+			ObjectMeta: metav1.ObjectMeta{Namespace: "shootextensionstatus1ns", Name: "shootextensionstatus1"},
 		}
 
 		lease1 = &coordinationv1.Lease{
@@ -778,6 +788,20 @@ yO57qEcJqG1cB7iSchFuCSTuDBbZlN0fXgn4YjiWZyb4l3BDp3rm4iJImA==
 		Expect(graph.HasPathFrom(VertexTypeShootState, shootState1.Namespace, shootState1.Name, VertexTypeShoot, shootState1.Namespace, shootState1.Name)).To(BeFalse())
 	})
 
+	It("should behave as expected for gardencorev1alpha1.ShootExtensionStatus", func() {
+		By("add")
+		fakeInformerShootExtensionStatus.Add(shootExtensionStatus1)
+		Expect(graph.graph.Nodes().Len()).To(Equal(2))
+		Expect(graph.graph.Edges().Len()).To(Equal(1))
+		Expect(graph.HasPathFrom(VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShoot, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name)).To(BeTrue())
+
+		By("delete")
+		fakeInformerShootExtensionStatus.Delete(shootExtensionStatus1)
+		Expect(graph.graph.Nodes().Len()).To(BeZero())
+		Expect(graph.graph.Edges().Len()).To(BeZero())
+		Expect(graph.HasPathFrom(VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShoot, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name)).To(BeFalse())
+	})
+
 	It("should behave as expected for coordinationv1.Lease", func() {
 		By("add")
 		fakeInformerLease.Add(lease1)
@@ -936,6 +960,15 @@ yO57qEcJqG1cB7iSchFuCSTuDBbZlN0fXgn4YjiWZyb4l3BDp3rm4iJImA==
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			fakeInformerShootExtensionStatus.Add(shootExtensionStatus1)
+			lock.Lock()
+			defer lock.Unlock()
+			nodes, edges = nodes+2, edges+1
+			paths[VertexTypeShootExtensionStatus] = append(paths[VertexTypeShootExtensionStatus], pathExpectation{VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShoot, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, BeTrue()})
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			fakeInformerLease.Add(lease1)
 			lock.Lock()
 			defer lock.Unlock()
@@ -1076,6 +1109,15 @@ yO57qEcJqG1cB7iSchFuCSTuDBbZlN0fXgn4YjiWZyb4l3BDp3rm4iJImA==
 			defer lock.Unlock()
 			nodes, edges = nodes-2, edges-1
 			paths[VertexTypeShootState] = append(paths[VertexTypeShootState], pathExpectation{VertexTypeShootState, shootState1.Namespace, shootState1.Name, VertexTypeShoot, shootState1.Namespace, shootState1.Name, BeFalse()})
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fakeInformerShootExtensionStatus.Delete(shootExtensionStatus1)
+			lock.Lock()
+			defer lock.Unlock()
+			nodes, edges = nodes-2, edges-1
+			paths[VertexTypeShootExtensionStatus] = append(paths[VertexTypeShootExtensionStatus], pathExpectation{VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShoot, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, BeFalse()})
 		}()
 		wg.Add(1)
 		go func() {
@@ -1224,6 +1266,15 @@ yO57qEcJqG1cB7iSchFuCSTuDBbZlN0fXgn4YjiWZyb4l3BDp3rm4iJImA==
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			fakeInformerShootExtensionStatus.Add(shootExtensionStatus1)
+			lock.Lock()
+			defer lock.Unlock()
+			nodes, edges = nodes+2, edges+1
+			paths[VertexTypeShootExtensionStatus] = append(paths[VertexTypeShootExtensionStatus], pathExpectation{VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, BeTrue()})
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
 			fakeInformerLease.Add(lease1)
 			lock.Lock()
 			defer lock.Unlock()
@@ -1337,6 +1388,14 @@ yO57qEcJqG1cB7iSchFuCSTuDBbZlN0fXgn4YjiWZyb4l3BDp3rm4iJImA==
 			lock.Lock()
 			defer lock.Unlock()
 			paths[VertexTypeShootState] = append(paths[VertexTypeShootState], pathExpectation{VertexTypeShootState, shootState1.Namespace, shootState1.Name, VertexTypeShoot, shootState1.Namespace, shootState1.Name, BeFalse()})
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fakeInformerShootExtensionStatus.Delete(shootExtensionStatus1)
+			lock.Lock()
+			defer lock.Unlock()
+			paths[VertexTypeShootExtensionStatus] = append(paths[VertexTypeShootExtensionStatus], pathExpectation{VertexTypeShootExtensionStatus, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, VertexTypeShoot, shootExtensionStatus1.Namespace, shootExtensionStatus1.Name, BeFalse()})
 		}()
 		wg.Add(1)
 		go func() {

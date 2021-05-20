@@ -22,7 +22,9 @@ import (
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/gardener/gardener/pkg/controllerutils"
+	"github.com/gardener/gardener/pkg/operation/common"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -211,4 +213,22 @@ func GetShoot(ctx context.Context, c client.Client, namespace string) (*gardenco
 // NewGardenDecoder returns a new Garden API decoder.
 func NewGardenDecoder() runtime.Decoder {
 	return serializer.NewCodecFactory(gardenScheme).UniversalDecoder()
+}
+
+// ClusterFromRequest returns the cluster resource for a given reconcile.Request
+func ClusterFromRequest(ctx context.Context, seedClient client.Client, req reconcile.Request) (*extensionsv1alpha1.Cluster, error) {
+	var clusterName string
+	if req.Namespace == "" {
+		// Handling for cluster-scoped backupentry extension resources.
+		clusterName, _ = common.ExtractShootDetailsFromBackupEntryName(req.Name)
+	} else {
+		clusterName = req.Namespace
+	}
+
+	cluster := &extensionsv1alpha1.Cluster{}
+	if err := seedClient.Get(ctx, kutil.Key(clusterName), cluster); err != nil {
+		return nil, err
+	}
+
+	return cluster, nil
 }

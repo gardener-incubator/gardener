@@ -85,12 +85,13 @@ type Shoot struct {
 
 // Components contains different components deployed in the Shoot cluster.
 type Components struct {
-	BackupEntry      component.DeployMigrateWaiter
-	ClusterIdentity  component.Deployer
-	ControlPlane     *ControlPlane
-	Extensions       *Extensions
-	NetworkPolicies  component.Deployer
-	SystemComponents *SystemComponents
+	BackupEntry          component.DeployMigrateWaiter
+	ClusterIdentity      component.Deployer
+	ControlPlane         *ControlPlane
+	ShootExtensionStatus component.Deployer
+	Extensions           *Extensions
+	NetworkPolicies      component.Deployer
+	SystemComponents     *SystemComponents
 }
 
 // ControlPlane contains references to K8S control plane components.

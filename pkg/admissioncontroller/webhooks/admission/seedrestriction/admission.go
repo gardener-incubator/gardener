@@ -57,6 +57,7 @@ var (
 	leaseResource                     = coordinationv1.Resource("leases")
 	seedResource                      = gardencorev1beta1.Resource("seeds")
 	shootStateResource                = gardencorev1beta1.Resource("shootstates")
+	shootExtensionStatusResource      = gardencorev1beta1.Resource("shootextensionstatuses")
 )
 
 // New creates a new webhook handler restricting requests by gardenlets. It allows all requests.
@@ -114,6 +115,8 @@ func (h *handler) Handle(ctx context.Context, request admission.Request) admissi
 		return h.admitSeed(ctx, seedName, request)
 	case shootStateResource:
 		return h.admitShootState(ctx, seedName, request)
+	case shootExtensionStatusResource:
+		return h.admitShootExtensionStatus(ctx, seedName, request)
 	}
 
 	return acadmission.Allowed("")
@@ -259,6 +262,20 @@ func (h *handler) admitShootState(ctx context.Context, seedName string, request 
 		return admission.Errored(http.StatusBadRequest, fmt.Errorf("unexpected operation: %q", request.Operation))
 	}
 
+	shoot := &gardencorev1beta1.Shoot{}
+	if err := h.cacheReader.Get(ctx, kutil.Key(request.Namespace, request.Name), shoot); err != nil {
+		return admission.Errored(http.StatusInternalServerError, err)
+	}
+
+	return h.admit(seedName, shoot.Spec.SeedName)
+}
+
+func (h *handler) admitShootExtensionStatus(ctx context.Context, seedName string, request admission.Request) admission.Response {
+	if request.Operation != admissionv1.Create {
+		return admission.Errored(http.StatusBadRequest, fmt.Errorf("unexpected operation: %q", request.Operation))
+	}
+
+	// the name and namespace of the ShootExtensionStatus resource equals the corresponding Shoot resource
 	shoot := &gardencorev1beta1.Shoot{}
 	if err := h.cacheReader.Get(ctx, kutil.Key(request.Namespace, request.Name), shoot); err != nil {
 		return admission.Errored(http.StatusInternalServerError, err)

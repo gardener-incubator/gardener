@@ -23,12 +23,10 @@ import (
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	apiextensions "github.com/gardener/gardener/pkg/api/extensions"
 	gardencorev1alpha1 "github.com/gardener/gardener/pkg/apis/core/v1alpha1"
 	gardencorev1alpha1helper "github.com/gardener/gardener/pkg/apis/core/v1alpha1/helper"
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
@@ -37,7 +35,6 @@ import (
 	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/extensions"
-	"github.com/gardener/gardener/pkg/operation/common"
 	"github.com/gardener/gardener/pkg/utils"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
@@ -65,7 +62,7 @@ func NewShootStateControl(k8sGardenClient, seedClient kubernetes.Interface, log 
 // CreateShootStateSyncReconcileFunc creates a function which can be used by the reconciliation loop to sync the extension state and its resources to the ShootState
 func (s *ShootStateControl) CreateShootStateSyncReconcileFunc(kind string, objectCreator func() client.Object) reconcile.Func {
 	return func(ctx context.Context, req reconcile.Request) (reconcile.Result, error) {
-		extensionObj, err := s.getExtensionObject(ctx, req.NamespacedName, objectCreator)
+		extensionObj, err := GetExtensionObject(ctx, s.seedClient.Client(), req.NamespacedName, objectCreator)
 		if apierrors.IsNotFound(err) {
 			s.log.Debugf("Skipping ShootState sync because resource with kind %s is missing in namespace %s", kind, req.NamespacedName)
 			return reconcile.Result{}, nil
@@ -83,7 +80,7 @@ func (s *ShootStateControl) CreateShootStateSyncReconcileFunc(kind string, objec
 		newState := extensionObj.GetExtensionStatus().GetState()
 		newResources := extensionObj.GetExtensionStatus().GetResources()
 
-		cluster, err := s.getClusterFromRequest(ctx, req)
+		cluster, err := extensions.ClusterFromRequest(ctx, s.seedClient.Client(), req)
 		if err != nil {
 			if apierrors.IsNotFound(err) {
 				return reconcile.Result{}, nil
@@ -226,31 +223,6 @@ func purposeToString(purpose *string) string {
 		return "<nil>"
 	}
 	return *purpose
-}
-
-func (s *ShootStateControl) getExtensionObject(ctx context.Context, key types.NamespacedName, objectCreator func() client.Object) (extensionsv1alpha1.Object, error) {
-	obj := objectCreator()
-	if err := s.seedClient.Client().Get(ctx, key, obj); err != nil {
-		return nil, err
-	}
-	return apiextensions.Accessor(obj)
-}
-
-func (s *ShootStateControl) getClusterFromRequest(ctx context.Context, req reconcile.Request) (*extensionsv1alpha1.Cluster, error) {
-	var clusterName string
-	if req.Namespace == "" {
-		// Handling for cluster-scoped backupentry extension resources.
-		clusterName, _ = common.ExtractShootDetailsFromBackupEntryName(req.Name)
-	} else {
-		clusterName = req.Namespace
-	}
-
-	cluster := &extensionsv1alpha1.Cluster{}
-	if err := s.seedClient.Client().Get(ctx, kutil.Key(clusterName), cluster); err != nil {
-		return nil, err
-	}
-
-	return cluster, nil
 }
 
 func (s *ShootStateControl) getShootStateFromCluster(ctx context.Context, cluster *extensionsv1alpha1.Cluster) (*gardencorev1alpha1.ShootState, error) {

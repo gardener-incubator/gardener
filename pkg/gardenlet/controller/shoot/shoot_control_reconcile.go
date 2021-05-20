@@ -93,6 +93,10 @@ func (c *Controller) runReconcileShootFlow(ctx context.Context, o *operation.Ope
 			Name: "Ensuring that ShootState exists",
 			Fn:   flow.TaskFn(botanist.EnsureShootStateExists).RetryUntilTimeout(defaultInterval, defaultTimeout),
 		})
+		ensureShootExtensionStatus = g.Add(flow.Task{
+			Name: "Ensuring that ShootExtensionStatus resource exists in the project namespace",
+			Fn:   flow.TaskFn(botanist.Shoot.Components.ShootExtensionStatus.Deploy).RetryUntilTimeout(defaultInterval, defaultTimeout),
+		})
 		deployNamespace = g.Add(flow.Task{
 			Name: "Deploying Shoot namespace in Seed",
 			Fn:   flow.TaskFn(botanist.DeploySeedNamespace).RetryUntilTimeout(defaultInterval, defaultTimeout),
@@ -165,7 +169,7 @@ func (c *Controller) runReconcileShootFlow(ctx context.Context, o *operation.Ope
 		deployInfrastructure = g.Add(flow.Task{
 			Name:         "Deploying Shoot infrastructure",
 			Fn:           flow.TaskFn(botanist.DeployInfrastructure).RetryUntilTimeout(defaultInterval, defaultTimeout),
-			Dependencies: flow.NewTaskIDs(deploySecrets, deployCloudProviderSecret, deployReferencedResources),
+			Dependencies: flow.NewTaskIDs(deploySecrets, deployCloudProviderSecret, deployReferencedResources, ensureShootExtensionStatus),
 		})
 		waitUntilInfrastructureReady = g.Add(flow.Task{
 			Name: "Waiting until shoot infrastructure has been reconciled",

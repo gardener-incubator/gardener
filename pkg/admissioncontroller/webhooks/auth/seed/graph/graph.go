@@ -82,6 +82,7 @@ func (g *graph) Setup(ctx context.Context, c cache.Cache) error {
 		{&gardencorev1beta1.Seed{}, g.setupSeedWatch},
 		{&gardencorev1beta1.Shoot{}, g.setupShootWatch},
 		{shootStates, g.setupShootStateWatch},
+		{&gardencorev1alpha1.ShootExtensionStatus{}, g.setupShootExtensionStatusWatch},
 	} {
 		informer, err := c.GetInformer(ctx, resource.obj)
 		if err != nil {

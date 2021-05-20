@@ -77,6 +77,7 @@ var (
 	seedResource                      = gardencorev1beta1.Resource("seeds")
 	shootResource                     = gardencorev1beta1.Resource("shoots")
 	shootStateResource                = gardencorev1alpha1.Resource("shootstates")
+	shootExtensionStatusResource      = gardencorev1alpha1.Resource("shootextensionstatuses")
 )
 
 // TODO: Revisit all `DecisionNoOpinion` later. Today we cannot deny the request for backwards compatibility
@@ -164,6 +165,12 @@ func (a *authorizer) Authorize(_ context.Context, attrs auth.Attributes) (auth.D
 			)
 		case shootStateResource:
 			return a.authorize(seedName, graph.VertexTypeShootState, attrs,
+				[]string{"get", "update", "patch"},
+				[]string{"create"},
+				nil,
+			)
+		case shootExtensionStatusResource:
+			return a.authorize(seedName, graph.VertexTypeShootExtensionStatus, attrs,
 				[]string{"get", "update", "patch"},
 				[]string{"create"},
 				nil,

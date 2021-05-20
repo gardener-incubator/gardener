@@ -12,23 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package extensions_test
+package extensions
 
 import (
-	"encoding/json"
-	"testing"
+	"context"
 
-	. "github.com/onsi/ginkgo"
-	. "github.com/onsi/gomega"
-	"k8s.io/apimachinery/pkg/runtime"
+	apiextensions "github.com/gardener/gardener/pkg/api/extensions"
+	extensionsv1alpha1 "github.com/gardener/gardener/pkg/apis/extensions/v1alpha1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-func TestExtensionControllers(t *testing.T) {
-	RegisterFailHandler(Fail)
-	RunSpecs(t, "Gardenlet Federated Extension Controller Suite")
-}
-
-func encode(obj runtime.Object) []byte {
-	out, _ := json.Marshal(obj)
-	return out
+// GetExtensionObject is a helper to get the extension object for a key and objectCreator function
+func GetExtensionObject(ctx context.Context, seedClient client.Client, key types.NamespacedName, objectCreator func() client.Object) (extensionsv1alpha1.Object, error) {
+	obj := objectCreator()
+	if err := seedClient.Get(ctx, key, obj); err != nil {
+		return nil, err
+	}
+	return apiextensions.Accessor(obj)
 }

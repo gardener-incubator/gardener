@@ -29,6 +29,7 @@ import (
 	"github.com/gardener/gardener/pkg/operation"
 	"github.com/gardener/gardener/pkg/operation/botanist/component/clusteridentity"
 	"github.com/gardener/gardener/pkg/operation/botanist/component/etcd"
+	"github.com/gardener/gardener/pkg/operation/botanist/component/shootextensionstatus"
 	shootpkg "github.com/gardener/gardener/pkg/operation/shoot"
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -148,7 +149,22 @@ func New(ctx context.Context, o *operation.Operation) (*Botanist, error) {
 
 	// other components
 	o.Shoot.Components.BackupEntry = b.DefaultCoreBackupEntry(b.K8sGardenClient.DirectClient())
-	o.Shoot.Components.ClusterIdentity = clusteridentity.New(o.Shoot.Info.Status.ClusterIdentity, o.GardenClusterIdentity, o.Shoot.Info.Name, o.Shoot.Info.Namespace, o.Shoot.SeedNamespace, string(o.Shoot.Info.Status.UID), b.K8sGardenClient.DirectClient(), b.K8sSeedClient.DirectClient(), b.Logger)
+	o.Shoot.Components.ClusterIdentity = clusteridentity.New(
+		o.Shoot.Info.Status.ClusterIdentity,
+		o.GardenClusterIdentity,
+		o.Shoot.Info.Name,
+		o.Shoot.Info.Namespace,
+		o.Shoot.SeedNamespace,
+		string(o.Shoot.Info.Status.UID),
+		b.K8sGardenClient.DirectClient(),
+		b.K8sSeedClient.DirectClient(),
+		b.Logger,
+	)
+
+	o.Shoot.Components.ShootExtensionStatus = shootextensionstatus.New(
+		b.K8sGardenClient.Client(),
+		b.Shoot.Info,
+	)
 	o.Shoot.Components.NetworkPolicies, err = b.DefaultNetworkPolicies(sniPhase)
 	if err != nil {
 		return nil, err

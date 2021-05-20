@@ -309,8 +309,3 @@ var _ = Describe("ShootState Control", func() {
 		})
 	})
 })
-
-func encode(obj runtime.Object) []byte {
-	out, _ := json.Marshal(obj)
-	return out
-}

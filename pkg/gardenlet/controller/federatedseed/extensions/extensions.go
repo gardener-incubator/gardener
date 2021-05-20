@@ -44,6 +44,7 @@ type Controller struct {
 	controllerArtifacts           controllerArtifacts
 	controllerInstallationControl *controllerInstallationControl
 	shootStateControl             *ShootStateControl
+	shootExtensionStatusControl   *ShootExtensionStatusControl
 }
 
 // NewController creates new controller that syncs extensions states to ShootState
@@ -62,7 +63,8 @@ func NewController(ctx context.Context, gardenClient, seedClient kubernetes.Inte
 			lock:                        &sync.RWMutex{},
 			kindToRequiredTypes:         make(map[string]sets.String),
 		},
-		shootStateControl: NewShootStateControl(gardenClient, seedClient, log, recorder),
+		shootStateControl:           NewShootStateControl(gardenClient, seedClient, log, recorder),
+		shootExtensionStatusControl: NewShootExtensionStatusControl(gardenClient.Client(), seedClient.Client(), log, recorder),
 	}
 
 	if err := controller.controllerArtifacts.initialize(ctx, seedClient); err != nil {
@@ -97,6 +99,11 @@ func (s *Controller) Run(ctx context.Context, controllerInstallationWorkers, sho
 		s.createShootStateWorkers(ctx, s.shootStateControl)
 	}
 
+	shootExtensionStatusWorkers := 1
+	for i := 0; i < shootExtensionStatusWorkers; i++ {
+		s.createShootExtensionStatusWorkers(ctx, s.shootExtensionStatusControl)
+	}
+
 	s.log.Info("Extension controller initialized.")
 	return nil
 }
@@ -122,6 +129,13 @@ func (s *Controller) createShootStateWorkers(ctx context.Context, control *Shoot
 	for kind, artifact := range s.controllerArtifacts.stateArtifacts {
 		workerName := fmt.Sprintf("ShootState-%s", kind)
 		controllerutils.CreateWorker(ctx, artifact.queue, workerName, control.CreateShootStateSyncReconcileFunc(kind, artifact.newObjFunc), &s.waitGroup, s.workerCh)
+	}
+}
+
+func (s *Controller) createShootExtensionStatusWorkers(ctx context.Context, control *ShootExtensionStatusControl) {
+	for kind, artifact := range s.controllerArtifacts.extensionStatusArtifacts {
+		workerName := fmt.Sprintf("ShootExtensionStatus-%s", kind)
+		controllerutils.CreateWorker(ctx, artifact.queue, workerName, control.CreateShootExtensionStatusSyncReconcileFunc(kind, artifact.newObjFunc), &s.waitGroup, s.workerCh)
 	}
 }
 
@@ -202,4 +216,12 @@ func extensionPredicateFunc(f func(extensionsv1alpha1.Object, extensionsv1alpha1
 		)
 		return ok1 && ok2 && f(newExtensionObj, oldExtensionObj)
 	}
+}
+
+func extensionProviderStatusChanged(newObj, oldObj interface{}) bool {
+	return extensionPredicateFunc(
+		func(new, old extensionsv1alpha1.Object) bool {
+			return !apiequality.Semantic.DeepEqual(new.GetExtensionStatus().GetProviderStatus(), old.GetExtensionStatus().GetProviderStatus())
+		},
+	)(newObj, oldObj)
 }

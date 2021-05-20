@@ -21,6 +21,7 @@ rules:
   - seeds
   - shoots
   - shootstates
+  - shootextensionstatuses
   - projects
   verbs:
   - get

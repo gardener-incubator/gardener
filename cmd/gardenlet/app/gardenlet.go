@@ -307,6 +307,7 @@ func NewGardenlet(ctx context.Context, cfg *config.GardenletConfiguration) (*Gar
 			&gardencorev1beta1.ControllerDeployment{},
 			&gardencorev1beta1.Project{},
 			&gardencorev1alpha1.ShootState{},
+			&gardencorev1alpha1.ShootExtensionStatus{},
 		)
 
 	if seedConfig := cfg.SeedConfig; seedConfig != nil {

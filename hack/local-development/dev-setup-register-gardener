@@ -374,6 +374,7 @@ $ADMISSION_CONTROLLER_PORT_STRING
     - backupbuckets
     - backupentries
     - shootstates
+    - shootextensionstatuses
   - apiGroups:
     - operations.gardener.cloud
     apiVersions:
