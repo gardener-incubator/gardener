@@ -193,6 +193,46 @@ var _ = Describe("deleteconfirmation", func() {
 				})
 			})
 
+			Context("shoot operations", func() {
+				It("should reject if the shoot has lastOperation=Migrate", func() {
+					shoot.Status = core.ShootStatus{
+						LastOperation: &core.LastOperation{
+							Type: core.LastOperationTypeMigrate,
+						},
+					}
+
+					attrs = admission.NewAttributesRecord(nil, nil, core.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, core.Resource("shoots").WithVersion("version"), "", admission.Delete, &metav1.DeleteOptions{}, false, nil)
+
+					shoot.Annotations = map[string]string{
+						gutil.ConfirmationDeletion: "true",
+					}
+					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
+
+					err := admissionHandler.Validate(context.TODO(), attrs, nil)
+
+					Expect(err).To(BeForbiddenError())
+				})
+
+				It("should reject if the shoot has lastOperation=Restore", func() {
+					shoot.Status = core.ShootStatus{
+						LastOperation: &core.LastOperation{
+							Type: core.LastOperationTypeRestore,
+						},
+					}
+
+					attrs = admission.NewAttributesRecord(nil, nil, core.Kind("Shoot").WithVersion("version"), shoot.Namespace, shoot.Name, core.Resource("shoots").WithVersion("version"), "", admission.Delete, &metav1.DeleteOptions{}, false, nil)
+
+					shoot.Annotations = map[string]string{
+						gutil.ConfirmationDeletion: "true",
+					}
+					Expect(shootStore.Add(&shoot)).NotTo(HaveOccurred())
+
+					err := admissionHandler.Validate(context.TODO(), attrs, nil)
+
+					Expect(err).To(BeForbiddenError())
+				})
+			})
+
 			Context("delete collection", func() {
 				It("should allow because all shoots have the deletion confirmation annotation", func() {
 					attrs = admission.NewAttributesRecord(nil, nil, core.Kind("Shoot").WithVersion("version"), shoot.Namespace, "", core.Resource("shoots").WithVersion("version"), "", admission.Delete, &metav1.DeleteOptions{}, false, nil)
