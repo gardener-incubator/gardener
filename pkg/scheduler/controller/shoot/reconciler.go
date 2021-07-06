@@ -21,20 +21,17 @@ import (
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	gardencorev1beta1helper "github.com/gardener/gardener/pkg/apis/core/v1beta1/helper"
-	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/scheduler/apis/config"
 	"github.com/gardener/gardener/pkg/scheduler/controller/common"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	cidrvalidation "github.com/gardener/gardener/pkg/utils/validation/cidr"
+	"github.com/go-logr/logr"
 
-	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/validation/field"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -43,80 +40,32 @@ import (
 // MsgUnschedulable is the Message for the Event on a Shoot that the Scheduler creates in case it cannot schedule the Shoot to any Seed
 const MsgUnschedulable = "Failed to schedule shoot"
 
-func (c *SchedulerController) shootAdd(obj interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		logger.Logger.Errorf("Couldn't get key for object %+v: %v", obj, err)
-		return
-	}
-
-	newShoot, ok := obj.(*gardencorev1beta1.Shoot)
-	if !ok {
-		logger.Logger.Errorf("Couldn't convert object into `core.gardener.cloud/v1beta1.Shoot`: %+v: %v", obj, err)
-		return
-	}
-
-	// If the Shoot manifest already specifies a desired Seed cluster, we ignore it.
-	if newShoot.Spec.SeedName != nil {
-		return
-	}
-
-	if newShoot.DeletionTimestamp != nil {
-		logger.Logger.Infof("Ignoring shoot '%s' because it has been marked for deletion", newShoot.Name)
-		c.shootQueue.Forget(key)
-		return
-	}
-
-	c.shootQueue.Add(key)
-}
-
-func (c *SchedulerController) shootUpdate(_, newObj interface{}) {
-	c.shootAdd(newObj)
-}
-
-// NewReconciler creates a new instance of a reconciler which schedules Shoots.
-func NewReconciler(
-	l logrus.FieldLogger,
-	config *config.SchedulerConfiguration,
-	gardenClient kubernetes.Interface,
-	recorder record.EventRecorder,
-) reconcile.Reconciler {
-	return &reconciler{
-		logger:       l,
-		config:       config,
-		gardenClient: gardenClient,
-		recorder:     recorder,
-	}
-}
-
 type reconciler struct {
-	logger       logrus.FieldLogger
-	config       *config.SchedulerConfiguration
-	gardenClient kubernetes.Interface
+	logger       logr.Logger
+	config       *config.ShootSchedulerConfiguration
+	gardenClient client.Client
 	recorder     record.EventRecorder
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	shoot := &gardencorev1beta1.Shoot{}
-	if err := r.gardenClient.Client().Get(ctx, request.NamespacedName, shoot); err != nil {
+	if err := r.gardenClient.Get(ctx, request.NamespacedName, shoot); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.logger.Infof("Object %q is gone, stop reconciling: %v", request.Name, err)
 			return reconcile.Result{}, nil
 		}
-		r.logger.Infof("Unable to retrieve object %q from store: %v", request.Name, err)
+		r.logger.Error(err, "Unable to retrieve object from store", "request", request)
 		return reconcile.Result{}, err
 	}
 
-	schedulerLogger := r.logger.WithField("scheduler", "shoot").
-		WithField("shoot", client.ObjectKeyFromObject(shoot).String())
+	logger := r.logger.WithValues("shoot", client.ObjectKeyFromObject(shoot))
 
 	if shoot.Spec.SeedName != nil {
-		schedulerLogger.Infof("shoot already scheduled onto seed %q, nothing left to do", *shoot.Spec.SeedName)
+		logger.Info("Shoot already scheduled onto seed, nothing left to do", "seed", *shoot.Spec.SeedName)
 		return reconcile.Result{}, nil
 	}
 
 	// If no Seed is referenced, we try to determine an adequate one.
-	seed, err := determineSeed(ctx, r.gardenClient.Cache(), shoot, r.config.Schedulers.Shoot.Strategy)
+	seed, err := determineSeed(ctx, r.gardenClient, shoot, r.config.Strategy)
 	if err != nil {
 		r.reportFailedScheduling(shoot, err)
 		return reconcile.Result{}, err
@@ -125,12 +74,19 @@ func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (
 	// attempt scheduling shoot, run with optimistic locking to prevent any wrongful (re)scheduling in case we missed
 	// some updates
 	shoot.Spec.SeedName = &seed.Name
-	if err := r.gardenClient.Client().Update(ctx, shoot); err != nil {
+	if err := r.gardenClient.Update(ctx, shoot); err != nil {
 		r.reportFailedScheduling(shoot, err)
 		return reconcile.Result{}, err
 	}
 
-	schedulerLogger.Infof("Shoot '%s' (Cloud Profile '%s', Region '%s') successfully scheduled to seed '%s' using SeedDeterminationStrategy '%s'", shoot.Name, shoot.Spec.CloudProfileName, shoot.Spec.Region, seed.Name, r.config.Schedulers.Shoot.Strategy)
+	logger.Info(
+		"Shoot successfully scheduled to seed",
+		"cloudprofile", shoot.Spec.CloudProfileName,
+		"region", shoot.Spec.Region,
+		"seed", seed.Name,
+		"strategy", r.config.Strategy,
+	)
+
 	r.reportEvent(shoot, corev1.EventTypeNormal, gardencorev1beta1.ShootEventSchedulingSuccessful, "Scheduled to seed '%s'", seed.Name)
 	return reconcile.Result{}, nil
 }

@@ -17,121 +17,91 @@ package shoot
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap/keys"
-	"github.com/gardener/gardener/pkg/controllerutils"
-	"github.com/gardener/gardener/pkg/logger"
-	"github.com/gardener/gardener/pkg/scheduler"
 	"github.com/gardener/gardener/pkg/scheduler/apis/config"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
+	"k8s.io/apimachinery/pkg/types"
+	ctrlruntimeclient "sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-// SchedulerController controls Seeds.
-type SchedulerController struct {
-	config         *config.SchedulerConfiguration
-	reconciler     reconcile.Reconciler
-	hasSyncedFuncs []cache.InformerSynced
+const (
+	// ControllerName is the name of this controller.
+	ControllerName = "shoot-scheduler-controller"
+)
 
-	shootQueue             workqueue.RateLimitingInterface
-	workerCh               chan int
-	numberOfRunningWorkers int
-}
-
-// NewGardenerScheduler creates a new scheduler controller.
-func NewGardenerScheduler(
+func AddToManager(
 	ctx context.Context,
-	clientMap clientmap.ClientMap,
-	config *config.SchedulerConfiguration,
-	recorder record.EventRecorder,
-) (
-	*SchedulerController,
-	error,
-) {
-	gardenClient, err := clientMap.GetClient(ctx, keys.ForGarden())
+	mgr manager.Manager,
+	config *config.ShootSchedulerConfiguration,
+) error {
+	logger := mgr.GetLogger()
+
+	reconciler := &reconciler{
+		config:       config,
+		logger:       logger,
+		gardenClient: mgr.GetClient(),
+		recorder:     mgr.GetEventRecorderFor(ControllerName),
+	}
+
+	ctrlOptions := controller.Options{
+		Reconciler:              reconciler,
+		MaxConcurrentReconciles: config.ConcurrentSyncs,
+	}
+	c, err := controller.New(ControllerName, mgr, ctrlOptions)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	shootInformer, err := gardenClient.Cache().GetInformer(ctx, &gardencorev1beta1.Shoot{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Shoot Informer: %w", err)
-	}
+	shootHandler := handler.EnqueueRequestsFromMapFunc(func(obj ctrlruntimeclient.Object) []reconcile.Request {
+		// Ignore non-shoots
+		shoot, ok := obj.(*gardencorev1beta1.Shoot)
+		if !ok {
+			return nil
+		}
 
-	schedulerController := &SchedulerController{
-		reconciler: NewReconciler(logger.Logger, config, gardenClient, recorder),
-		config:     config,
-		shootQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "gardener-shoot-scheduler"),
-		workerCh:   make(chan int),
-	}
+		// If the Shoot manifest already specifies a desired Seed cluster, we ignore it.
+		if shoot.Spec.SeedName != nil {
+			return nil
+		}
 
-	shootInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    schedulerController.shootAdd,
-		UpdateFunc: schedulerController.shootUpdate,
+		if shoot.DeletionTimestamp != nil {
+			logger.Info("Ignoring shoot because it has been marked for deletion", "shoot", shoot.Name)
+			return nil
+		}
+
+		return []reconcile.Request{{
+			NamespacedName: types.NamespacedName{
+				Namespace: obj.GetNamespace(),
+				Name:      obj.GetName(),
+			}},
+		}
 	})
 
-	schedulerController.hasSyncedFuncs = append(schedulerController.hasSyncedFuncs, shootInformer.HasSynced)
-
-	return schedulerController, nil
-}
-
-// Run runs the SchedulerController until the given stop channel can be read from.
-func (c *SchedulerController) Run(ctx context.Context) {
-	var waitGroup sync.WaitGroup
-
-	if !cache.WaitForCacheSync(ctx.Done(), c.hasSyncedFuncs...) {
-		logger.Logger.Error("Timed out waiting for caches to sync")
-		return
+	shoot := &gardencorev1beta1.Shoot{}
+	if err := c.Watch(&source.Kind{Type: shoot}, shootHandler); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %v", shoot, err)
 	}
 
-	// Count number of running workers.
-	go func() {
-		for res := range c.workerCh {
-			c.numberOfRunningWorkers += res
-			logger.Logger.Debugf("Current number of running Scheduler workers is %d", c.numberOfRunningWorkers)
-		}
-	}()
-
-	for i := 0; i < c.config.Schedulers.Shoot.ConcurrentSyncs; i++ {
-		controllerutils.CreateWorker(ctx, c.shootQueue, "Shoot", c.reconciler, &waitGroup, c.workerCh)
-	}
-
-	logger.Logger.Infof("Shoot Scheduler controller initialized with %d workers  (with Strategy: %s)", c.config.Schedulers.Shoot.ConcurrentSyncs, c.config.Schedulers.Shoot.Strategy)
-
-	<-ctx.Done()
-	c.shootQueue.ShutDown()
-
-	for {
-		if c.shootQueue.Len() == 0 && c.numberOfRunningWorkers == 0 {
-			logger.Logger.Debug("No running Scheduler worker and no items left in the queues. Terminated Scheduler controller...")
-			break
-		}
-		logger.Logger.Debugf("Waiting for %d Scheduler worker(s) to finish (%d item(s) left in the queues)...", c.numberOfRunningWorkers, c.shootQueue.Len())
-		time.Sleep(5 * time.Second)
-	}
-
-	waitGroup.Wait()
+	return nil
 }
 
-// RunningWorkers returns the number of running workers.
-func (c *SchedulerController) RunningWorkers() int {
-	return c.numberOfRunningWorkers
-}
+// // RunningWorkers returns the number of running workers.
+// func (c *Reconciler) RunningWorkers() int {
+// 	return c.numberOfRunningWorkers
+// }
 
-// CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-func (c *SchedulerController) CollectMetrics(ch chan<- prometheus.Metric) {
-	metric, err := prometheus.NewConstMetric(scheduler.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "seed")
-	if err != nil {
-		scheduler.ScrapeFailures.With(prometheus.Labels{"kind": "gardener-shoot-scheduler"}).Inc()
-		return
-	}
-	ch <- metric
-}
+// // CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
+// func (c *Reconciler) CollectMetrics(ch chan<- prometheus.Metric) {
+// 	metric, err := prometheus.NewConstMetric(scheduler.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "seed")
+// 	if err != nil {
+// 		scheduler.ScrapeFailures.With(prometheus.Labels{"kind": "gardener-shoot-scheduler"}).Inc()
+// 		return
+// 	}
+// 	ch <- metric
+// }

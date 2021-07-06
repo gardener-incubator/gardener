@@ -10,6 +10,7 @@ leaderElection:
   renewDeadline: 10s
   retryPeriod: 2s
   resourceLock: leases
+  resourceNamespace: garden
 logLevel: info
 server:
   http:
