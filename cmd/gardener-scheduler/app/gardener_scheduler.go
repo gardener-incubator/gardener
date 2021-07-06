@@ -78,6 +78,7 @@ func NewCommandStartGardenerScheduler() *cobra.Command {
 			if err := opts.validate(args); err != nil {
 				return err
 			}
+
 			return runCommand(cmd, opts)
 		},
 	}
@@ -93,24 +94,24 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	// Load config file
 	config, err := configloader.LoadFromFile(opts.ConfigFile)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	// Validate the configuration
 	if err := validation.ValidateConfiguration(config); err != nil {
-		return err
+		return fmt.Errorf("configuration is invalid: %w", err)
 	}
 
 	// Add feature flags
 	if err := schedulerfeatures.FeatureGate.SetFromMap(config.FeatureGates); err != nil {
-		return err
+		return fmt.Errorf("failed to set feature gates: %w", err)
 	}
 	kubernetes.UseCachedRuntimeClients = schedulerfeatures.FeatureGate.Enabled(features.CachedRuntimeClients)
 
 	// Initialize logger
 	zapLogger, err := logger.NewZapLogger(config.LogLevel)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to init logger: %w", err)
 	}
 
 	sugarLogger := zapLogger.Sugar()
@@ -136,7 +137,7 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	// Prepare REST config
 	restCfg, err := kubernetes.RESTConfigFromClientConnectionConfiguration(&config.ClientConnection, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create Kubernetes REST configuration: %w", err)
 	}
 
 	// Setup controller-runtime manager
