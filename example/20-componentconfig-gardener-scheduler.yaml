@@ -12,10 +12,14 @@ leaderElection:
   resourceLock: leases
   resourceNamespace: garden
 logLevel: info
-server:
+healthServer:
   http:
     bindAddress: 0.0.0.0
     port: 10251
+metricsServer:
+  http:
+    bindAddress: 0.0.0.0
+    port: 19251
 #schedulers:
 #  backupBucket:
 #    concurrentSyncs: 5 # defaults to 5

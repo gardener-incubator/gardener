@@ -142,8 +142,8 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 
 	// Setup controller-runtime manager
 	mgr, err := manager.New(restCfg, manager.Options{
-		// MetricsBindAddress: opt.internalAddr,
-		HealthProbeBindAddress:     net.JoinHostPort(config.Server.HTTP.BindAddress, strconv.Itoa(config.Server.HTTP.Port)),
+		MetricsBindAddress:         getAddress(config.MetricsServer.HTTP),
+		HealthProbeBindAddress:     getHealthAddress(config),
 		LeaderElection:             config.LeaderElection.LeaderElect,
 		LeaderElectionID:           "gardener-scheduler-leader-election",
 		LeaderElectionNamespace:    config.LeaderElection.ResourceNamespace,
@@ -170,4 +170,21 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	}
 
 	return nil
+}
+
+func getHealthAddress(cfg *config.SchedulerConfiguration) string {
+	address := getAddress(cfg.HealthServer.HTTP)
+	if address == "0" {
+		address = getAddress(cfg.Server.HTTP)
+	}
+
+	return address
+}
+
+func getAddress(httpServer config.Server) string {
+	if len(httpServer.BindAddress) > 0 && httpServer.Port != 0 {
+		return net.JoinHostPort(httpServer.BindAddress, strconv.Itoa(httpServer.Port))
+	}
+
+	return "0" // 0 means "disabled" in ctrl-runtime speak
 }

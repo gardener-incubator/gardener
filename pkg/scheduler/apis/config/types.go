@@ -59,8 +59,15 @@ type SchedulerConfiguration struct {
 	LeaderElection LeaderElectionConfiguration
 	// LogLevel is the level/severity for the logs. Must be one of [info,debug,error].
 	LogLevel string
-	// Server defines the configuration of the HTTP server.
+	// Server defines the configuration of the HTTP server. This is deprecated in favor of
+	// HealthServer.
 	Server ServerConfiguration
+	// HealthServer defines the configuration of the HTTP server providing the health & alive
+	// endpoints.
+	HealthServer ServerConfiguration
+	// MetricsServer defines the configuration of the HTTP server that provides the /metrics
+	// endpoint.
+	MetricsServer ServerConfiguration
 	// Scheduler defines the configuration of the schedulers.
 	Schedulers SchedulerControllerConfiguration
 	// FeatureGates is a map of feature names to bools that enable or disable alpha/experimental

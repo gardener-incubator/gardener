@@ -58,8 +58,15 @@ type SchedulerConfiguration struct {
 	LeaderElection LeaderElectionConfiguration `json:"leaderElection,omitempty"`
 	// LogLevel is the level/severity for the logs. Must be one of [info,debug,error].
 	LogLevel string `json:"logLevel,omitempty"`
-	// Server defines the configuration of the HTTP server.
+	// Server defines the configuration of the HTTP server. This is deprecated in favor of
+	// HealthServer.
 	Server ServerConfiguration `json:"server,omitempty"`
+	// HealthServer defines the configuration of the HTTP server providing the health & alive
+	// endpoints.
+	HealthServer ServerConfiguration `json:"healthServer,omitempty"`
+	// MetricsServer defines the configuration of the HTTP server that provides the /metrics
+	// endpoint.
+	MetricsServer ServerConfiguration `json:"metricsServer,omitempty"`
 	// Scheduler defines the configuration of the schedulers.
 	Schedulers SchedulerControllerConfiguration `json:"schedulers"`
 	// FeatureGates is a map of feature names to bools that enable or disable alpha/experimental
