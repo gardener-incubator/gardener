@@ -171,26 +171,22 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 }
 
 func newLogger(level string) *zap.Logger {
-	// this basically mimics New<type>Config, but with a custom sink
-	sink := zapcore.AddSync(os.Stderr)
-
-	lvl := zap.InfoLevel
+	var lvl zapcore.Level
 	switch level {
 	case "debug":
 		lvl = zap.DebugLevel
 	case "error":
 		lvl = zap.ErrorLevel
+	default:
+		lvl = zap.InfoLevel
 	}
 
 	encCfg := zap.NewProductionEncoderConfig()
-	// Having a dateformat makes it more easy to look at logs outside of something like Kibana
 	encCfg.TimeKey = "time"
 	encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-
-	// production config encodes durations as a float of the seconds value, but we want a more
-	// readable, precise representation
 	encCfg.EncodeDuration = zapcore.StringDurationEncoder
 
+	sink := zapcore.AddSync(os.Stderr)
 	opts := []zap.Option{
 		zap.AddCaller(),
 		zap.ErrorOutput(sink),

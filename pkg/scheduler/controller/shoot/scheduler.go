@@ -90,18 +90,3 @@ func AddToManager(
 
 	return nil
 }
-
-// // RunningWorkers returns the number of running workers.
-// func (c *Reconciler) RunningWorkers() int {
-// 	return c.numberOfRunningWorkers
-// }
-
-// // CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-// func (c *Reconciler) CollectMetrics(ch chan<- prometheus.Metric) {
-// 	metric, err := prometheus.NewConstMetric(scheduler.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "seed")
-// 	if err != nil {
-// 		scheduler.ScrapeFailures.With(prometheus.Labels{"kind": "gardener-shoot-scheduler"}).Inc()
-// 		return
-// 	}
-// 	ch <- metric
-// }
