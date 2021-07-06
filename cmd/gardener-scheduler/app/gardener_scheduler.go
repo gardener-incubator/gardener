@@ -23,7 +23,6 @@ import (
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/features"
 	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/scheduler/apis/config"
 	configloader "github.com/gardener/gardener/pkg/scheduler/apis/config/loader"
@@ -106,7 +105,6 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	if err := schedulerfeatures.FeatureGate.SetFromMap(config.FeatureGates); err != nil {
 		return fmt.Errorf("failed to set feature gates: %w", err)
 	}
-	kubernetes.UseCachedRuntimeClients = schedulerfeatures.FeatureGate.Enabled(features.CachedRuntimeClients)
 
 	// Initialize logger
 	zapLogger, err := logger.NewZapLogger(config.LogLevel)

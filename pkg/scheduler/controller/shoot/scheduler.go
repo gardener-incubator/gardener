@@ -35,6 +35,7 @@ const (
 	ControllerName = "shoot-scheduler-controller"
 )
 
+// AddToManager adds a new scheduler controller to the given manager.
 func AddToManager(
 	ctx context.Context,
 	mgr manager.Manager,
