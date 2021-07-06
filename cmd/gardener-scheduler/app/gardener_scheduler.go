@@ -24,16 +24,13 @@ import (
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/features"
+	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/scheduler/apis/config"
 	configloader "github.com/gardener/gardener/pkg/scheduler/apis/config/loader"
 	"github.com/gardener/gardener/pkg/scheduler/apis/config/validation"
 	shootcontroller "github.com/gardener/gardener/pkg/scheduler/controller/shoot"
 	schedulerfeatures "github.com/gardener/gardener/pkg/scheduler/features"
-	"github.com/go-logr/zapr"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	ctrlruntimelog "sigs.k8s.io/controller-runtime/pkg/log"
-	ctrlruntimelzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/spf13/cobra"
@@ -111,9 +108,12 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	kubernetes.UseCachedRuntimeClients = schedulerfeatures.FeatureGate.Enabled(features.CachedRuntimeClients)
 
 	// Initialize logger
-	rawLog := newLogger(config.LogLevel)
-	logrLogger := zapr.NewLogger(rawLog.WithOptions(zap.AddCallerSkip(1)))
-	sugarLogger := rawLog.Sugar()
+	zapLogger, err := logger.NewZapLogger(config.LogLevel)
+	if err != nil {
+		return err
+	}
+
+	sugarLogger := zapLogger.Sugar()
 	defer func() {
 		if err := sugarLogger.Sync(); err != nil {
 			fmt.Println(err)
@@ -124,7 +124,8 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	sugarLogger.Infof("Feature Gates: %s", schedulerfeatures.FeatureGate.String())
 
 	// set the logger used by sigs.k8s.io/controller-runtime
-	ctrlruntimelog.SetLogger(logrLogger)
+	zapLogr := logger.NewZapLogr(zapLogger)
+	ctrlruntimelog.SetLogger(zapLogr)
 
 	// Prepare a Kubernetes client object for the Garden cluster which contains all the Clientsets
 	// that can be used to access the Kubernetes API.
@@ -146,7 +147,7 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 		LeaderElectionID:           "gardener-scheduler-leader-election",
 		LeaderElectionNamespace:    config.LeaderElection.ResourceNamespace,
 		LeaderElectionResourceLock: config.LeaderElection.ResourceLock,
-		Logger:                     logrLogger,
+		Logger:                     zapLogr,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create controller manager: %w", err)
@@ -168,30 +169,4 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	}
 
 	return nil
-}
-
-func newLogger(level string) *zap.Logger {
-	var lvl zapcore.Level
-	switch level {
-	case "debug":
-		lvl = zap.DebugLevel
-	case "error":
-		lvl = zap.ErrorLevel
-	default:
-		lvl = zap.InfoLevel
-	}
-
-	encCfg := zap.NewProductionEncoderConfig()
-	encCfg.TimeKey = "time"
-	encCfg.EncodeTime = zapcore.ISO8601TimeEncoder
-	encCfg.EncodeDuration = zapcore.StringDurationEncoder
-
-	sink := zapcore.AddSync(os.Stderr)
-	opts := []zap.Option{
-		zap.AddCaller(),
-		zap.ErrorOutput(sink),
-	}
-
-	coreLog := zapcore.NewCore(&ctrlruntimelzap.KubeAwareEncoder{Encoder: zapcore.NewConsoleEncoder(encCfg)}, sink, zap.NewAtomicLevelAt(lvl))
-	return zap.New(coreLog, opts...)
 }

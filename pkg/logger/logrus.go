@@ -37,11 +37,11 @@ func NewLogger(logLevel string) *logrus.Logger {
 	var level logrus.Level
 
 	switch logLevel {
-	case "debug":
+	case DebugLevel:
 		level = logrus.DebugLevel
-	case "", "info":
+	case "", InfoLevel:
 		level = logrus.InfoLevel
-	case "error":
+	case ErrorLevel:
 		level = logrus.ErrorLevel
 	default:
 		panic("The specified log level is not supported.")
