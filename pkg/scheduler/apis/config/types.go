@@ -64,10 +64,10 @@ type SchedulerConfiguration struct {
 	Server ServerConfiguration
 	// HealthServer defines the configuration of the HTTP server providing the health & alive
 	// endpoints.
-	HealthServer ServerConfiguration
+	HealthServer *ServerConfiguration
 	// MetricsServer defines the configuration of the HTTP server that provides the /metrics
 	// endpoint.
-	MetricsServer ServerConfiguration
+	MetricsServer *ServerConfiguration
 	// Scheduler defines the configuration of the schedulers.
 	Schedulers SchedulerControllerConfiguration
 	// FeatureGates is a map of feature names to bools that enable or disable alpha/experimental

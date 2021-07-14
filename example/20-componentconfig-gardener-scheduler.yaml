@@ -26,5 +26,3 @@ metricsServer:
 #  shoot:
 #    concurrentSyncs: 5 # defaults to 5
 #    candidateDeterminationStrategy: MinimalDistance # either {SameRegion,MinimalDistance}
-featureGates:
-  CachedRuntimeClients: true

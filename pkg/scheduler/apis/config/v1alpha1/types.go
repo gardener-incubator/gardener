@@ -63,10 +63,10 @@ type SchedulerConfiguration struct {
 	Server ServerConfiguration `json:"server,omitempty"`
 	// HealthServer defines the configuration of the HTTP server providing the health & alive
 	// endpoints.
-	HealthServer ServerConfiguration `json:"healthServer,omitempty"`
+	HealthServer *ServerConfiguration `json:"healthServer,omitempty"`
 	// MetricsServer defines the configuration of the HTTP server that provides the /metrics
 	// endpoint.
-	MetricsServer ServerConfiguration `json:"metricsServer,omitempty"`
+	MetricsServer *ServerConfiguration `json:"metricsServer,omitempty"`
 	// Scheduler defines the configuration of the schedulers.
 	Schedulers SchedulerControllerConfiguration `json:"schedulers"`
 	// FeatureGates is a map of feature names to bools that enable or disable alpha/experimental

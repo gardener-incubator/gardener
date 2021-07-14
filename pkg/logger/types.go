@@ -1,4 +1,4 @@
-// Copyright (c) 2018 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
+// Copyright (c) 2021 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,11 +15,15 @@
 package logger
 
 const (
+	// DebugLevel is the debug log level, i.e. the most verbose.
 	DebugLevel = "debug"
-	InfoLevel  = "info"
+	// InfoLevel is the default log level.
+	InfoLevel = "info"
+	// ErrorLevel is a log level where only errors are logged.
 	ErrorLevel = "error"
 )
 
 var (
+	// AllLogLevels is a slice of all available log levels.
 	AllLogLevels = []string{DebugLevel, InfoLevel, ErrorLevel}
 )

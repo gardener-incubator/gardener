@@ -168,12 +168,8 @@ func autoConvert_v1alpha1_SchedulerConfiguration_To_config_SchedulerConfiguratio
 	if err := Convert_v1alpha1_ServerConfiguration_To_config_ServerConfiguration(&in.Server, &out.Server, s); err != nil {
 		return err
 	}
-	if err := Convert_v1alpha1_ServerConfiguration_To_config_ServerConfiguration(&in.HealthServer, &out.HealthServer, s); err != nil {
-		return err
-	}
-	if err := Convert_v1alpha1_ServerConfiguration_To_config_ServerConfiguration(&in.MetricsServer, &out.MetricsServer, s); err != nil {
-		return err
-	}
+	out.HealthServer = (*config.ServerConfiguration)(unsafe.Pointer(in.HealthServer))
+	out.MetricsServer = (*config.ServerConfiguration)(unsafe.Pointer(in.MetricsServer))
 	if err := Convert_v1alpha1_SchedulerControllerConfiguration_To_config_SchedulerControllerConfiguration(&in.Schedulers, &out.Schedulers, s); err != nil {
 		return err
 	}
@@ -197,12 +193,8 @@ func autoConvert_config_SchedulerConfiguration_To_v1alpha1_SchedulerConfiguratio
 	if err := Convert_config_ServerConfiguration_To_v1alpha1_ServerConfiguration(&in.Server, &out.Server, s); err != nil {
 		return err
 	}
-	if err := Convert_config_ServerConfiguration_To_v1alpha1_ServerConfiguration(&in.HealthServer, &out.HealthServer, s); err != nil {
-		return err
-	}
-	if err := Convert_config_ServerConfiguration_To_v1alpha1_ServerConfiguration(&in.MetricsServer, &out.MetricsServer, s); err != nil {
-		return err
-	}
+	out.HealthServer = (*ServerConfiguration)(unsafe.Pointer(in.HealthServer))
+	out.MetricsServer = (*ServerConfiguration)(unsafe.Pointer(in.MetricsServer))
 	if err := Convert_config_SchedulerControllerConfiguration_To_v1alpha1_SchedulerControllerConfiguration(&in.Schedulers, &out.Schedulers, s); err != nil {
 		return err
 	}
