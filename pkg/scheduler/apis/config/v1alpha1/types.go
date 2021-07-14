@@ -63,9 +63,11 @@ type SchedulerConfiguration struct {
 	Server ServerConfiguration `json:"server,omitempty"`
 	// HealthServer defines the configuration of the HTTP server providing the health & alive
 	// endpoints.
+	// +optional
 	HealthServer *ServerConfiguration `json:"healthServer,omitempty"`
 	// MetricsServer defines the configuration of the HTTP server that provides the /metrics
 	// endpoint.
+	// +optional
 	MetricsServer *ServerConfiguration `json:"metricsServer,omitempty"`
 	// Scheduler defines the configuration of the schedulers.
 	Schedulers SchedulerControllerConfiguration `json:"schedulers"`
