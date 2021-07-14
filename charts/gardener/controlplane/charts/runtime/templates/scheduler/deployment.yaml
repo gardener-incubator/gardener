@@ -67,7 +67,7 @@ spec:
         livenessProbe:
           httpGet:
             path: /healthz
-            port: {{ required ".Values.global.scheduler.config.server.http.port is required" .Values.global.scheduler.config.server.http.port }}
+            port: {{ required ".Values.global.scheduler.config.healthServer.http.port is required" .Values.global.scheduler.config.healthServer.http.port }}
             scheme: HTTP
           initialDelaySeconds: 30
           timeoutSeconds: 5
