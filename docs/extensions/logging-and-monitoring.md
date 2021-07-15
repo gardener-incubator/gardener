@@ -30,7 +30,6 @@ Such `ConfigMap`s may contain four fields in their `data`:
 
 * `scrape_config`: This field contains Prometheus scrape configuration for the component(s) and metrics that shall be scraped.
 * `alerting_rules`: This field contains Alertmanager rules for alerts that shall be raised.
-* `observedComponents`: This field contains observed components which will be monitored by `Controlplane Logs Dashboard` Grafana dashboard.
 * (deprecated)`dashboard_operators`: This field contains a Grafana dashboard in JSON that is only relevant for Gardener operators.
 * (deprecated)`dashboard_users`: This field contains a Grafana dashboard in JSON that is only relevant for Gardener users (shoot owners).
 
@@ -88,13 +87,6 @@ data:
           annotations:
             description: All infrastructure specific operations cannot be completed (e.g. creating load balancers or persistent volumes).
             summary: Cloud controller manager is down.
-
-  observedComponents:
-    observedPods:
-    - podPrefix: cloud-controller-manager
-      isExposedToUser: true
-    - podPrefix: machine-controller-manager
-      isExposedToUser: true
 ```
 
 ## Logging
@@ -140,6 +132,37 @@ data:
         Reserve_Data        True
 ```
 
+##### How to expose logs to the users
+
+To expose logs from extension components to the users, the extension owners have to specify a `rewrite_tag` filer which will prefix the tag with `user-exposed`,
+thus telling the fluent-bit to send those logs to Loki under user tenant.
+Logs can be find in `Controlplane Logs Dashboard` Grafana dashboard.
+
+**Example:** In this example we tell fluent-bit when it finds a log with field `tag`, which match the `Rule`, to prefix the log's tag with `user-exposed` and to
+re-emit the new record by setting the las argument to `true`.
+
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gardener-extension-provider-aws-logging-config
+  namespace: garden
+  labels:
+    extensions.gardener.cloud/configuration: logging
+data:
+  filter-kubernetes.conf: |
+    [FILTER]
+        Name                rewrite_tag
+        Match               kubernetes.*
+        Rule                $tag ^kubernetes\.var\.log\.containers\.(cloud-controller-manager-.+?_.+?_aws-cloud-controller-manager|csi-driver-controller-.+?_.+?_aws-csi) user-exposed.$TAG true
+        Emitter_Name        re_emitted-provider-aws
+```
+In this case we have predefined filter which copies the log's tag into the log record under the `tag` field. The tag consist of the container logs directories path,
+plus `<pod_name>_<shoot_controlplane_namespace>_<container_name>_<container_id>`, so here we say:
+> When you see a record from pod `cloud-controller-manager` and some of the `aws-cloud-controller-manager`, `csi-driver-controller` or  `aws-csi` containers change the tag to `user-exposed.<old_tag>` and instead of replacing the tag inline, copy the record and re-emit it as new one, keeping the old record unchanged."
+
+**Note:** If you don't re-emit the record the operators will not see the logs from those components.
+
 Further details how to define parsers and use them with examples can be found in the following [guide](../development/log_parsers.md).
 
 #### Grafana
@@ -153,6 +176,7 @@ The three types of Grafana instances found in a seed cluster are configured to e
   - Kube Controller Manager
   - Kube Scheduler
   - Cluster Autoscaler
+  - VPA stuff
 - Shoot Operator Grafana dashboards expose logs from the shoot cluster namespace where they belong
   - All user's dashboards
   - [Kubernetes Pods](../../charts/seed-monitoring/charts/grafana/dashboards/operators/kubernetes-pods-dashboard.json)

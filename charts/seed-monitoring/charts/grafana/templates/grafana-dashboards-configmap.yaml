@@ -39,5 +39,3 @@ data:
 {{- if .Values.extensions.dashboards }}
 {{- toString .Values.extensions.dashboards | indent 2 }}
 {{ end }}
-  controlplane-logs-dashboard.json: |-
-{{ include "logging-dashboard" .Values.extensions.observedPods | indent 4 }}
