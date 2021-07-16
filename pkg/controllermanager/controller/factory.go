@@ -102,6 +102,10 @@ func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manage
 		return fmt.Errorf("failed to setup CSR controller: %w", err)
 	}
 
+	if err := cloudprofilecontroller.AddToManager(ctx, mgr, f.cfg.Controllers.CloudProfile); err != nil {
+		return fmt.Errorf("failed to setup cloudprofile controller: %w", err)
+	}
+
 	// Done :)
 	f.logger.WithValues("version", version.Get().GitVersion).Info("Gardener controller manager initialized.")
 
@@ -137,12 +141,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	gardenmetrics.RegisterWorkqueMetrics()
 
 	// Create controllers.
-	cloudProfileController, err := cloudprofilecontroller.NewCloudProfileController(ctx, f.clientMap, f.recorder)
-	if err != nil {
-		return fmt.Errorf("failed initializing CloudProfile controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, cloudProfileController)
-
 	controllerRegistrationController, err := controllerregistrationcontroller.NewController(ctx, f.clientMap)
 	if err != nil {
 		return fmt.Errorf("failed initializing ControllerRegistration controller: %w", err)
@@ -203,7 +201,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	}
 	metricsCollectors = append(metricsCollectors, managedSeedSetController)
 
-	go cloudProfileController.Run(ctx, f.cfg.Controllers.CloudProfile.ConcurrentSyncs)
 	go controllerDeploymentController.Run(ctx, f.cfg.Controllers.ControllerDeployment.ConcurrentSyncs)
 	go controllerRegistrationController.Run(ctx, f.cfg.Controllers.ControllerRegistration.ConcurrentSyncs)
 	go plantController.Run(ctx, f.cfg.Controllers.Plant.ConcurrentSyncs)

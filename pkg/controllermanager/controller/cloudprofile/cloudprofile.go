@@ -17,120 +17,46 @@ package cloudprofile
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap/keys"
-	"github.com/gardener/gardener/pkg/controllermanager"
-	"github.com/gardener/gardener/pkg/controllerutils"
-	"github.com/gardener/gardener/pkg/logger"
+	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
-	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-// Controller controls CloudProfiles.
-type Controller struct {
-	reconciler     reconcile.Reconciler
-	hasSyncedFuncs []cache.InformerSynced
+const (
+	// ControllerName is the name of this controller.
+	ControllerName = "cloudprofile-controller"
+)
 
-	cloudProfileQueue      workqueue.RateLimitingInterface
-	workerCh               chan int
-	numberOfRunningWorkers int
-}
-
-// NewCloudProfileController takes a Kubernetes client <k8sGardenClient> and a <k8sGardenCoreInformers> for the Garden clusters.
-// It creates and return a new Garden controller to control CloudProfiles.
-func NewCloudProfileController(
+// AddToManager adds a new cloudprofile controller to the given manager.
+func AddToManager(
 	ctx context.Context,
-	clientMap clientmap.ClientMap,
-	recorder record.EventRecorder,
-) (
-	*Controller,
-	error,
-) {
-	gardenClient, err := clientMap.GetClient(ctx, keys.ForGarden())
+	mgr manager.Manager,
+	config *config.CloudProfileControllerConfiguration,
+) error {
+	reconciler := &reconciler{
+		logger:       mgr.GetLogger(),
+		gardenClient: mgr.GetClient(),
+		recorder:     mgr.GetEventRecorderFor(ControllerName),
+	}
+
+	ctrlOptions := controller.Options{
+		Reconciler:              reconciler,
+		MaxConcurrentReconciles: config.ConcurrentSyncs,
+	}
+	c, err := controller.New(ControllerName, mgr, ctrlOptions)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	cloudProfileInformer, err := gardenClient.Cache().GetInformer(ctx, &gardencorev1beta1.CloudProfile{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get CloudProfile Informer: %w", err)
+	profile := &gardencorev1beta1.CloudProfile{}
+	if err := c.Watch(&source.Kind{Type: profile}, &handler.EnqueueRequestForObject{}); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %w", profile, err)
 	}
 
-	cloudProfileController := &Controller{
-		cloudProfileQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "cloudprofile"),
-		reconciler:        NewCloudProfileReconciler(logger.Logger, gardenClient.Client(), recorder),
-		workerCh:          make(chan int),
-	}
-
-	cloudProfileInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    cloudProfileController.cloudProfileAdd,
-		UpdateFunc: cloudProfileController.cloudProfileUpdate,
-		DeleteFunc: cloudProfileController.cloudProfileDelete,
-	})
-
-	cloudProfileController.hasSyncedFuncs = append(cloudProfileController.hasSyncedFuncs, cloudProfileInformer.HasSynced)
-
-	return cloudProfileController, nil
-}
-
-// Run runs the Controller until the given stop channel can be read from.
-func (c *Controller) Run(ctx context.Context, workers int) {
-	var waitGroup sync.WaitGroup
-
-	// Check if informers cache has been populated
-	if !cache.WaitForCacheSync(ctx.Done(), c.hasSyncedFuncs...) {
-		logger.Logger.Error("Time out waiting for caches to sync")
-		return
-	}
-
-	go func() {
-		for res := range c.workerCh {
-			c.numberOfRunningWorkers += res
-			logger.Logger.Debugf("Current number of running CloudProfile workers is %d", c.numberOfRunningWorkers)
-		}
-	}()
-
-	logger.Logger.Info("CloudProfile controller initialized.")
-
-	// Start the workers
-	for i := 0; i < workers; i++ {
-		controllerutils.CreateWorker(ctx, c.cloudProfileQueue, "CloudProfile", c.reconciler, &waitGroup, c.workerCh)
-	}
-
-	<-ctx.Done()
-	c.cloudProfileQueue.ShutDown()
-
-	for {
-		if c.cloudProfileQueue.Len() == 0 && c.numberOfRunningWorkers == 0 {
-			logger.Logger.Debug("No running CloudProfile worker and no items left in the queues. Terminated CloudProfile controller...")
-			break
-		}
-		logger.Logger.Debugf("Waiting for %d CloudProfile worker(s) to finish (%d item(s) left in the queues)...", c.numberOfRunningWorkers, c.cloudProfileQueue.Len())
-		time.Sleep(5 * time.Second)
-	}
-
-	waitGroup.Wait()
-}
-
-// RunningWorkers returns the number of running workers.
-func (c *Controller) RunningWorkers() int {
-	return c.numberOfRunningWorkers
-}
-
-// CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-func (c *Controller) CollectMetrics(ch chan<- prometheus.Metric) {
-	metric, err := prometheus.NewConstMetric(controllermanager.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "cloudprofile")
-	if err != nil {
-		controllermanager.ScrapeFailures.With(prometheus.Labels{"kind": "cloudprofile-controller"}).Inc()
-		return
-	}
-	ch <- metric
+	return nil
 }
