@@ -44,6 +44,7 @@ import (
 	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/operation/garden"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/component-base/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // GardenControllerFactory contains information relevant to controllers for the Garden API group.
@@ -58,15 +60,45 @@ type GardenControllerFactory struct {
 	cfg       *config.ControllerManagerConfiguration
 	clientMap clientmap.ClientMap
 	recorder  record.EventRecorder
+	logger    logr.Logger
 }
 
 // NewGardenControllerFactory creates a new factory for controllers for the Garden API group.
-func NewGardenControllerFactory(clientMap clientmap.ClientMap, cfg *config.ControllerManagerConfiguration, recorder record.EventRecorder) *GardenControllerFactory {
+func NewGardenControllerFactory(clientMap clientmap.ClientMap, cfg *config.ControllerManagerConfiguration, recorder record.EventRecorder, logger logr.Logger) *GardenControllerFactory {
 	return &GardenControllerFactory{
 		cfg:       cfg,
 		clientMap: clientMap,
 		recorder:  recorder,
+		logger:    logger,
 	}
+}
+
+// AddControllers adds all the controllers for the Garden API group. It also performs bootstrapping tasks.
+func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manager.Manager) error {
+	if err := addAllFieldIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
+		return fmt.Errorf("failed to setup field indexes: %w", err)
+	}
+
+	// Delete legacy (and meanwhile unused) ConfigMap after https://github.com/gardener/gardener/pull/3756.
+	// TODO: This code can be removed in a future release.
+	if err := kutil.DeleteObject(ctx, mgr.GetClient(), &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: "gardener-controller-manager-internal-config", Namespace: v1beta1constants.GardenNamespace}}); err != nil {
+		return err
+	}
+
+	k8sGardenClient, err := f.clientMap.GetClient(ctx, keys.ForGarden())
+	if err != nil {
+		panic(fmt.Errorf("failed to get garden client: %+v", err))
+	}
+
+	runtime.Must(garden.BootstrapCluster(ctx, k8sGardenClient))
+	f.logger.Info("Successfully bootstrapped the Garden cluster.")
+
+	// Setup controllers
+
+	// Done :)
+	f.logger.WithValues("version", version.Get().GitVersion).Info("Gardener controller manager initialized.")
+
+	return nil
 }
 
 // Run starts all the controllers for the Garden API group. It also performs bootstrapping tasks.
