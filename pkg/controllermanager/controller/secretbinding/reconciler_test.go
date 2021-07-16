@@ -49,7 +49,7 @@ var _ = Describe("SecretBindingControl", func() {
 
 	Describe("#mayReleaseSecret", func() {
 		var (
-			reconciler *secretBindingReconciler
+			rec *reconciler
 
 			secretBinding1Namespace = "foo"
 			secretBinding1Name      = "bar"
@@ -60,13 +60,13 @@ var _ = Describe("SecretBindingControl", func() {
 		)
 
 		BeforeEach(func() {
-			reconciler = &secretBindingReconciler{gardenClient: c}
+			rec = &reconciler{gardenClient: c}
 		})
 
 		It("should return true as no other secretbinding exists", func() {
 			c.EXPECT().List(ctx, gomock.AssignableToTypeOf(&gardencorev1beta1.SecretBindingList{}))
 
-			allowed, err := reconciler.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
+			allowed, err := rec.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
 
 			Expect(allowed).To(BeTrue())
 			Expect(err).NotTo(HaveOccurred())
@@ -89,7 +89,7 @@ var _ = Describe("SecretBindingControl", func() {
 				return nil
 			})
 
-			allowed, err := reconciler.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
+			allowed, err := rec.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
 
 			Expect(allowed).To(BeTrue())
 			Expect(err).NotTo(HaveOccurred())
@@ -112,7 +112,7 @@ var _ = Describe("SecretBindingControl", func() {
 				return nil
 			})
 
-			allowed, err := reconciler.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
+			allowed, err := rec.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
 
 			Expect(allowed).To(BeFalse())
 			Expect(err).NotTo(HaveOccurred())
@@ -121,7 +121,7 @@ var _ = Describe("SecretBindingControl", func() {
 		It("should return an error as the list failed", func() {
 			c.EXPECT().List(ctx, gomock.AssignableToTypeOf(&gardencorev1beta1.SecretBindingList{})).Return(fakeErr)
 
-			allowed, err := reconciler.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
+			allowed, err := rec.mayReleaseSecret(ctx, secretBinding1Namespace, secretBinding1Name, secretNamespace, secretName)
 
 			Expect(allowed).To(BeFalse())
 			Expect(err).To(MatchError(fakeErr))
