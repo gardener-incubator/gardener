@@ -21,6 +21,7 @@ import (
 	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
 	"github.com/gardener/gardener/pkg/logger"
 	mockclient "github.com/gardener/gardener/pkg/mock/controller-runtime/client"
+	"github.com/go-logr/logr"
 
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo"
@@ -84,7 +85,7 @@ var _ = Describe("eventReconciler", func() {
 			TTLNonShootEvents: ttl,
 		}
 
-		reconciler = NewEventReconciler(logger.NewNopLogger(), k8sGardenRuntimeClient, cfg)
+		reconciler = NewEventReconciler(logr.Discard(), k8sGardenRuntimeClient, cfg)
 	})
 
 	AfterEach(func() {
@@ -156,39 +157,6 @@ var _ = Describe("eventReconciler", func() {
 				Expect(err).NotTo(HaveOccurred())
 			})
 		})
-	})
-})
-
-var _ = Describe("#enqueueEvent", func() {
-	var (
-		queue *fakeQueue
-		c     *Controller
-
-		eventName = "foo"
-	)
-
-	BeforeEach(func() {
-		logger.Logger = logger.NewNopLogger()
-		queue = &fakeQueue{}
-		c = &Controller{
-			eventQueue: queue,
-		}
-	})
-
-	It("should do nothing because it cannot compute the object key", func() {
-		c.enqueueEvent("foo")
-
-		Expect(queue.Len()).To(BeZero())
-	})
-
-	It("should add events to the workqueue", func() {
-		event := &corev1.Event{
-			ObjectMeta: metav1.ObjectMeta{Name: eventName},
-		}
-		c.enqueueEvent(event)
-
-		Expect(queue.Len()).To(Equal(1))
-		Expect(queue.items[0]).To(Equal(eventName))
 	})
 })
 

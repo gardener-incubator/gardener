@@ -17,126 +17,40 @@ package event
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap/keys"
-	"github.com/gardener/gardener/pkg/controllermanager"
 	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
-	"github.com/gardener/gardener/pkg/controllerutils"
-	"github.com/gardener/gardener/pkg/logger"
 
-	"github.com/prometheus/client_golang/prometheus"
 	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-// Controller controls Events.
-type Controller struct {
-	gardenClient client.Client
-	cfg          *config.EventControllerConfiguration
+const (
+	// ControllerName is the name of this controller.
+	ControllerName = "event-controller"
+)
 
-	reconciler     reconcile.Reconciler
-	hasSyncedFuncs []cache.InformerSynced
-
-	eventQueue             workqueue.RateLimitingInterface
-	numberOfRunningWorkers int
-	workerCh               chan int
-}
-
-// NewController instantiates a new event controller
-func NewController(
+// AddToManager adds a new event controller to the given manager.
+func AddToManager(
 	ctx context.Context,
-	clientMap clientmap.ClientMap,
-	cfg *config.EventControllerConfiguration,
-) (
-	*Controller,
-	error,
-) {
-	gardenClient, err := clientMap.GetClient(ctx, keys.ForGarden())
+	mgr manager.Manager,
+	config *config.EventControllerConfiguration,
+) error {
+	ctrlOptions := controller.Options{
+		Reconciler:              NewEventReconciler(mgr.GetLogger(), mgr.GetClient(), config),
+		MaxConcurrentReconciles: config.ConcurrentSyncs,
+	}
+	c, err := controller.New(ControllerName, mgr, ctrlOptions)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	events := &metav1.PartialObjectMetadata{}
-	events.SetGroupVersionKind(corev1.SchemeGroupVersion.WithKind("Event"))
-	eventInformer, err := gardenClient.Cache().GetInformer(ctx, events)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Event Informer: %w", err)
+	event := &corev1.Event{}
+	if err := c.Watch(&source.Kind{Type: event}, &handler.EnqueueRequestForObject{}); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %w", event, err)
 	}
 
-	controller := &Controller{
-		gardenClient: gardenClient.Client(),
-		cfg:          cfg,
-
-		reconciler: NewEventReconciler(logger.Logger, gardenClient.Client(), cfg),
-
-		eventQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "event"),
-		workerCh:   make(chan int),
-	}
-
-	eventInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc: controller.enqueueEvent,
-	})
-
-	controller.hasSyncedFuncs = append(controller.hasSyncedFuncs, eventInformer.HasSynced)
-
-	return controller, nil
-}
-
-// Run runs the Controller
-func (c *Controller) Run(ctx context.Context) {
-	var waitGroup sync.WaitGroup
-
-	if !cache.WaitForCacheSync(ctx.Done(), c.hasSyncedFuncs...) {
-		logger.Logger.Error("Timed out waiting for caches to sync")
-		return
-	}
-
-	go func() {
-		for res := range c.workerCh {
-			c.numberOfRunningWorkers += res
-			logger.Logger.Debugf("Current number of running Event workers is %d", c.numberOfRunningWorkers)
-		}
-	}()
-
-	logger.Logger.Info("Event controller initialized.")
-
-	for i := 0; i < c.cfg.ConcurrentSyncs; i++ {
-		controllerutils.CreateWorker(ctx, c.eventQueue, "Event", c.reconciler, &waitGroup, c.workerCh)
-	}
-
-	<-ctx.Done()
-	c.eventQueue.ShutDown()
-
-	for {
-		if c.eventQueue.Len() == 0 && c.numberOfRunningWorkers == 0 {
-			logger.Logger.Debug("No running Event worker and no items left in the queues. Terminating Event controller...")
-			break
-		}
-		logger.Logger.Debugf("Waiting for %d Event worker(s) to finish (%d item(s) left in the queues)...", c.numberOfRunningWorkers, c.eventQueue.Len())
-		time.Sleep(5 * time.Second)
-	}
-
-	waitGroup.Wait()
-}
-
-// RunningWorkers returns the number of running workers.
-func (c *Controller) RunningWorkers() int {
-	return c.numberOfRunningWorkers
-}
-
-// CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-func (c *Controller) CollectMetrics(ch chan<- prometheus.Metric) {
-	metric, err := prometheus.NewConstMetric(controllermanager.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "event")
-	if err != nil {
-		controllermanager.ScrapeFailures.With(prometheus.Labels{"kind": "event-controller"}).Inc()
-		return
-	}
-	ch <- metric
+	return nil
 }

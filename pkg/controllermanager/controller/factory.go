@@ -104,6 +104,12 @@ func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manage
 		return fmt.Errorf("failed to setup controllerdeployment controller: %w", err)
 	}
 
+	if eventControllerConfig := f.cfg.Controllers.Event; eventControllerConfig != nil {
+		if err := eventcontroller.AddToManager(ctx, mgr, eventControllerConfig); err != nil {
+			return fmt.Errorf("failed to setup event controller: %w", err)
+		}
+	}
+
 	if err := quotacontroller.AddToManager(ctx, mgr, f.cfg.Controllers.Quota); err != nil {
 		return fmt.Errorf("failed to setup quota controller: %w", err)
 	}
@@ -196,16 +202,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	go shootController.Run(ctx, f.cfg.Controllers.ShootMaintenance.ConcurrentSyncs, f.cfg.Controllers.ShootQuota.ConcurrentSyncs, f.cfg.Controllers.ShootHibernation.ConcurrentSyncs, f.cfg.Controllers.ShootReference.ConcurrentSyncs, f.cfg.Controllers.ShootRetry.ConcurrentSyncs)
 	go exposureClassController.Run(ctx, f.cfg.Controllers.ExposureClass.ConcurrentSyncs)
 	go managedSeedSetController.Run(ctx, f.cfg.Controllers.ManagedSeedSet.ConcurrentSyncs)
-
-	if eventControllerConfig := f.cfg.Controllers.Event; eventControllerConfig != nil {
-		eventController, err := eventcontroller.NewController(ctx, f.clientMap, eventControllerConfig)
-		if err != nil {
-			return fmt.Errorf("failed initializing Event controller: %w", err)
-		}
-		metricsCollectors = append(metricsCollectors, eventController)
-
-		go eventController.Run(ctx)
-	}
 
 	// Initialize the Controller metrics collection.
 	gardenmetrics.RegisterControllerMetrics(controllermanager.ControllerWorkerSum, controllermanager.ScrapeFailures, metricsCollectors...)
