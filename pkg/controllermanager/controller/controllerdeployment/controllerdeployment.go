@@ -17,123 +17,48 @@ package controllerdeployment
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/sirupsen/logrus"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
-	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap/keys"
-	"github.com/gardener/gardener/pkg/controllerutils"
-	"github.com/gardener/gardener/pkg/gardenlet"
+	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
+
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-// FinalizerName is the finalizer used by this controller.
-const FinalizerName = "core.gardener.cloud/controllerdeployment"
+const (
+	// ControllerName is the name of this controller.
+	ControllerName = "controllerDeployment-controller"
 
-// Controller controls ManagedSeedSets.
-type Controller struct {
-	controllerDeploymentReconciler reconcile.Reconciler
-	hasSyncedFuncs                 []cache.InformerSynced
+	// FinalizerName is the finalizer used by this controller.
+	FinalizerName = "core.gardener.cloud/controllerdeployment"
+)
 
-	controllerDeploymentQueue workqueue.RateLimitingInterface
-
-	numberOfRunningWorkers int
-	workerCh               chan int
-
-	logger *logrus.Logger
-}
-
-// New creates a new Gardener controller for ControllerDeployments.
-func New(
+// AddToManager adds a new controllerdeployment controller to the given manager.
+func AddToManager(
 	ctx context.Context,
-	clientMap clientmap.ClientMap,
-	logger *logrus.Logger,
-) (*Controller, error) {
-	gardenClient, err := clientMap.GetClient(ctx, keys.ForGarden())
+	mgr manager.Manager,
+	config *config.ControllerDeploymentControllerConfiguration,
+) error {
+	reconciler := &reconciler{
+		logger:       mgr.GetLogger(),
+		gardenClient: mgr.GetClient(),
+	}
+
+	ctrlOptions := controller.Options{
+		Reconciler:              reconciler,
+		MaxConcurrentReconciles: config.ConcurrentSyncs,
+	}
+	c, err := controller.New(ControllerName, mgr, ctrlOptions)
 	if err != nil {
-		return nil, fmt.Errorf("could not get garden client: %w", err)
+		return err
 	}
 
-	controllerDeploymentInformer, err := gardenClient.Cache().GetInformer(ctx, &gardencorev1beta1.ControllerDeployment{})
-	if err != nil {
-		return nil, fmt.Errorf("could not get ControllerDeployment informer: %w", err)
+	dep := &gardencorev1beta1.ControllerDeployment{}
+	if err := c.Watch(&source.Kind{Type: dep}, &handler.EnqueueRequestForObject{}); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %w", dep, err)
 	}
 
-	controller := &Controller{
-		controllerDeploymentReconciler: NewReconciler(logger, gardenClient.Client()),
-		controllerDeploymentQueue:      workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "ManagedSeedSet"),
-		workerCh:                       make(chan int),
-		logger:                         logger,
-	}
-
-	controllerDeploymentInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    controller.controllerDeploymentAdd,
-		UpdateFunc: controller.controllerDeploymentUpdate,
-	})
-
-	controller.hasSyncedFuncs = []cache.InformerSynced{
-		controllerDeploymentInformer.HasSynced,
-	}
-
-	return controller, nil
-}
-
-// Run runs the Controller until the given context is cancelled.
-func (c *Controller) Run(ctx context.Context, workers int) {
-	var waitGroup sync.WaitGroup
-
-	if !cache.WaitForCacheSync(ctx.Done(), c.hasSyncedFuncs...) {
-		c.logger.Error("Timed out waiting for caches to sync")
-		return
-	}
-
-	// Count number of running workers
-	go func() {
-		for res := range c.workerCh {
-			c.numberOfRunningWorkers += res
-			c.logger.Debugf("Current number of running ControllerDeployment workers is %d", c.numberOfRunningWorkers)
-		}
-	}()
-
-	c.logger.Info("ControllerDeployment controller initialized.")
-
-	for i := 0; i < workers; i++ {
-		controllerutils.CreateWorker(ctx, c.controllerDeploymentQueue, "ControllerDeployment", c.controllerDeploymentReconciler, &waitGroup, c.workerCh)
-	}
-
-	// Shutdown handling
-	<-ctx.Done()
-	c.controllerDeploymentQueue.ShutDown()
-
-	for {
-		if c.controllerDeploymentQueue.Len() == 0 && c.numberOfRunningWorkers == 0 {
-			c.logger.Debug("No running ControllerDeployment worker and no items left in the queues. Terminated ControllerDeployment controller...")
-			break
-		}
-		c.logger.Debugf("Waiting for %d ControllerDeployment worker(s) to finish (%d item(s) left in the queues)...", c.numberOfRunningWorkers, c.controllerDeploymentQueue.Len())
-		time.Sleep(5 * time.Second)
-	}
-
-	waitGroup.Wait()
-}
-
-// RunningWorkers returns the number of running workers.
-func (c *Controller) RunningWorkers() int {
-	return c.numberOfRunningWorkers
-}
-
-// CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-func (c *Controller) CollectMetrics(ch chan<- prometheus.Metric) {
-	metric, err := prometheus.NewConstMetric(gardenlet.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "controllerDeployment")
-	if err != nil {
-		gardenlet.ScrapeFailures.With(prometheus.Labels{"kind": "controllerDeployment-controller"}).Inc()
-		return
-	}
-	ch <- metric
+	return nil
 }
