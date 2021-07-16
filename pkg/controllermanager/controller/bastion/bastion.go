@@ -17,22 +17,18 @@ package bastion
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	operationsv1alpha1 "github.com/gardener/gardener/pkg/apis/operations/v1alpha1"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap"
-	"github.com/gardener/gardener/pkg/client/kubernetes/clientmap/keys"
-	"github.com/gardener/gardener/pkg/controllermanager"
-	"github.com/gardener/gardener/pkg/controllerutils"
-	"github.com/gardener/gardener/pkg/logger"
+	"github.com/gardener/gardener/pkg/controllermanager/apis/config"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/util/workqueue"
+	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
 const (
@@ -40,119 +36,74 @@ const (
 	ControllerName = "bastion-controller"
 )
 
-// Controller controls Bastions.
-type Controller struct {
-	reconciler     reconcile.Reconciler
-	hasSyncedFuncs []cache.InformerSynced
-
-	gardenClient           client.Client
-	bastionQueue           workqueue.RateLimitingInterface
-	workerCh               chan int
-	numberOfRunningWorkers int
-	maxLifetime            time.Duration
-}
-
-// NewBastionController takes a Kubernetes client <k8sGardenClient> and a <k8sGardenCoreInformers> for the Garden clusters.
-// It creates and returns a new Garden controller to control Bastions.
-func NewBastionController(
+// AddToManager adds a new bastion controller to the given manager.
+func AddToManager(
 	ctx context.Context,
-	clientMap clientmap.ClientMap,
-	maxLifetime time.Duration,
-) (
-	*Controller,
-	error,
-) {
-	gardenClient, err := clientMap.GetClient(ctx, keys.ForGarden())
+	mgr manager.Manager,
+	config *config.BastionControllerConfiguration,
+) error {
+	reconciler := &reconciler{
+		logger:       mgr.GetLogger(),
+		gardenClient: mgr.GetClient(),
+		maxLifetime:  config.MaxLifetime.Duration,
+	}
+
+	ctrlOptions := controller.Options{
+		Reconciler:              reconciler,
+		MaxConcurrentReconciles: config.ConcurrentSyncs,
+	}
+	c, err := controller.New(ControllerName, mgr, ctrlOptions)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	bastionInformer, err := gardenClient.Cache().GetInformer(ctx, &operationsv1alpha1.Bastion{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Bastion Informer: %w", err)
-	}
+	shootHandler := handler.EnqueueRequestsFromMapFunc(func(obj client.Object) []reconcile.Request {
+		// Ignore non-shoots
+		shoot, ok := obj.(*gardencorev1beta1.Shoot)
+		if !ok {
+			return nil
+		}
 
-	shootInformer, err := gardenClient.Cache().GetInformer(ctx, &gardencorev1beta1.Shoot{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get Shoot Informer: %w", err)
-	}
+		// only shoot deletions should trigger this, so we can cleanup Bastions
+		if shoot.DeletionTimestamp == nil {
+			return nil
+		}
 
-	logger := logger.Logger.WithField("controller", ControllerName)
-	bastionController := &Controller{
-		gardenClient: gardenClient.Client(),
-		bastionQueue: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "bastion"),
-		reconciler:   NewBastionReconciler(logger, gardenClient.Client(), maxLifetime),
-		workerCh:     make(chan int),
-		maxLifetime:  maxLifetime,
-	}
+		// list all bastions that reference this shoot
+		bastionList := operationsv1alpha1.BastionList{}
+		listOptions := client.ListOptions{Namespace: shoot.Namespace, Limit: int64(1)}
 
-	bastionInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    bastionController.bastionAdd,
-		UpdateFunc: bastionController.bastionUpdate,
-		DeleteFunc: bastionController.bastionDelete,
+		if err := mgr.GetClient().List(ctx, &bastionList, &listOptions); err != nil {
+			mgr.GetLogger().Error(err, "Failed to list Bastions")
+			return nil
+		}
+
+		requests := []reconcile.Request{}
+		for _, bastion := range bastionList.Items {
+			if bastion.Spec.ShootRef.Name == shoot.Name {
+				requests = append(requests, reconcile.Request{
+					NamespacedName: types.NamespacedName{
+						Namespace: bastion.Namespace,
+						Name:      bastion.Name,
+					},
+				})
+			}
+		}
+
+		return requests
 	})
 
-	shootInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    func(obj interface{}) { bastionController.shootAdd(ctx, obj) },
-		UpdateFunc: func(old, new interface{}) { bastionController.shootUpdate(ctx, old, new) },
-		DeleteFunc: func(obj interface{}) { bastionController.shootDelete(ctx, obj) },
-	})
-
-	bastionController.hasSyncedFuncs = append(bastionController.hasSyncedFuncs, bastionInformer.HasSynced, shootInformer.HasSynced)
-
-	return bastionController, nil
-}
-
-// Run runs the Controller until the given stop channel can be read from.
-func (c *Controller) Run(ctx context.Context, workers int) {
-	var waitGroup sync.WaitGroup
-
-	// Check if informers cache has been populated
-	if !cache.WaitForCacheSync(ctx.Done(), c.hasSyncedFuncs...) {
-		logger.Logger.Error("Time out waiting for caches to sync")
-		return
+	// reconcile bastions
+	bastion := &operationsv1alpha1.Bastion{}
+	if err := c.Watch(&source.Kind{Type: bastion}, &handler.EnqueueRequestForObject{}); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %w", bastion, err)
 	}
 
-	go func() {
-		for res := range c.workerCh {
-			c.numberOfRunningWorkers += res
-			logger.Logger.Debugf("Current number of running Bastion workers is %d", c.numberOfRunningWorkers)
-		}
-	}()
-
-	logger.Logger.Info("Bastion controller initialized.")
-
-	// Start the workers
-	for i := 0; i < workers; i++ {
-		controllerutils.CreateWorker(ctx, c.bastionQueue, "Bastion", c.reconciler, &waitGroup, c.workerCh)
+	// whenever a shoot is deleted, cleanup the associated bastions
+	shoot := &gardencorev1beta1.Shoot{}
+	if err := c.Watch(&source.Kind{Type: shoot}, shootHandler); err != nil {
+		return fmt.Errorf("failed to create watcher for %T: %w", shoot, err)
 	}
 
-	<-ctx.Done()
-	c.bastionQueue.ShutDown()
-
-	for {
-		if c.bastionQueue.Len() == 0 && c.numberOfRunningWorkers == 0 {
-			logger.Logger.Debug("No running Bastion worker and no items left in the queues. Terminating Bastion controller...")
-			break
-		}
-		logger.Logger.Debugf("Waiting for %d Bastion worker(s) to finish (%d item(s) left in the queues)...", c.numberOfRunningWorkers, c.bastionQueue.Len())
-		time.Sleep(5 * time.Second)
-	}
-
-	waitGroup.Wait()
-}
-
-// RunningWorkers returns the number of running workers.
-func (c *Controller) RunningWorkers() int {
-	return c.numberOfRunningWorkers
-}
-
-// CollectMetrics implements gardenmetrics.ControllerMetricsCollector interface
-func (c *Controller) CollectMetrics(ch chan<- prometheus.Metric) {
-	metric, err := prometheus.NewConstMetric(controllermanager.ControllerWorkerSum, prometheus.GaugeValue, float64(c.RunningWorkers()), "bastion")
-	if err != nil {
-		controllermanager.ScrapeFailures.With(prometheus.Labels{"kind": ControllerName}).Inc()
-		return
-	}
-	ch <- metric
+	return nil
 }

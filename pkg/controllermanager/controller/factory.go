@@ -87,13 +87,16 @@ func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manage
 
 	k8sGardenClient, err := f.clientMap.GetClient(ctx, keys.ForGarden())
 	if err != nil {
-		panic(fmt.Errorf("failed to get garden client: %+v", err))
+		return fmt.Errorf("failed to get garden client: %w", err)
 	}
 
 	runtime.Must(garden.BootstrapCluster(ctx, k8sGardenClient))
 	f.logger.Info("Successfully bootstrapped the Garden cluster.")
 
 	// Setup controllers
+	if err := bastioncontroller.AddToManager(ctx, mgr, f.cfg.Controllers.Bastion); err != nil {
+		return fmt.Errorf("failed to setup bastion controller: %w", err)
+	}
 
 	// Done :)
 	f.logger.WithValues("version", version.Get().GitVersion).Info("Gardener controller manager initialized.")
@@ -130,12 +133,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	gardenmetrics.RegisterWorkqueMetrics()
 
 	// Create controllers.
-	bastionController, err := bastioncontroller.NewBastionController(ctx, f.clientMap, f.cfg.Controllers.Bastion.MaxLifetime.Duration)
-	if err != nil {
-		return fmt.Errorf("failed initializing Bastion controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, bastionController)
-
 	cloudProfileController, err := cloudprofilecontroller.NewCloudProfileController(ctx, f.clientMap, f.recorder)
 	if err != nil {
 		return fmt.Errorf("failed initializing CloudProfile controller: %w", err)
@@ -208,7 +205,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	}
 	metricsCollectors = append(metricsCollectors, managedSeedSetController)
 
-	go bastionController.Run(ctx, f.cfg.Controllers.Bastion.ConcurrentSyncs)
 	go cloudProfileController.Run(ctx, f.cfg.Controllers.CloudProfile.ConcurrentSyncs)
 	go controllerDeploymentController.Run(ctx, f.cfg.Controllers.ControllerDeployment.ConcurrentSyncs)
 	go controllerRegistrationController.Run(ctx, f.cfg.Controllers.ControllerRegistration.ConcurrentSyncs)
