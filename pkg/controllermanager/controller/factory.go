@@ -98,6 +98,10 @@ func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manage
 		return fmt.Errorf("failed to setup bastion controller: %w", err)
 	}
 
+	if err := csrcontroller.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to setup CSR controller: %w", err)
+	}
+
 	// Done :)
 	f.logger.WithValues("version", version.Get().GitVersion).Info("Gardener controller manager initialized.")
 
@@ -144,12 +148,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 		return fmt.Errorf("failed initializing ControllerRegistration controller: %w", err)
 	}
 	metricsCollectors = append(metricsCollectors, controllerRegistrationController)
-
-	csrController, err := csrcontroller.NewCSRController(ctx, f.clientMap)
-	if err != nil {
-		return fmt.Errorf("failed initializing CSR controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, csrController)
 
 	exposureClassController, err := exposureclasscontroller.NewExposureClassController(ctx, f.clientMap, f.recorder)
 	if err != nil {
@@ -208,7 +206,6 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	go cloudProfileController.Run(ctx, f.cfg.Controllers.CloudProfile.ConcurrentSyncs)
 	go controllerDeploymentController.Run(ctx, f.cfg.Controllers.ControllerDeployment.ConcurrentSyncs)
 	go controllerRegistrationController.Run(ctx, f.cfg.Controllers.ControllerRegistration.ConcurrentSyncs)
-	go csrController.Run(ctx, 1)
 	go plantController.Run(ctx, f.cfg.Controllers.Plant.ConcurrentSyncs)
 	go projectController.Run(ctx, f.cfg.Controllers.Project.ConcurrentSyncs)
 	go quotaController.Run(ctx, f.cfg.Controllers.Quota.ConcurrentSyncs)
