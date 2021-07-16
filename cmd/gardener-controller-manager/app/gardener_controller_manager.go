@@ -37,6 +37,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/component-base/version/verflag"
 	ctrlruntimelog "sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
@@ -165,10 +166,12 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	}
 
 	// Initialize logger
-	zapLogger, err := logger.NewZapLogger(config.LogLevel)
-	if err != nil {
-		return fmt.Errorf("failed to init logger: %w", err)
-	}
+	// zapLogger, err := logger.NewZapLogger(config.LogLevel)
+	// if err != nil {
+	// 	return fmt.Errorf("failed to init logger: %w", err)
+	// }
+
+	zapLogger := zap.NewRaw()
 
 	sugarLogger := zapLogger.Sugar()
 	defer func() {
@@ -181,7 +184,8 @@ func runCommand(cmd *cobra.Command, opts *Options) error {
 	sugarLogger.Infof("Feature Gates: %s", controllermanagerfeatures.FeatureGate.String())
 
 	// set the logger used by sigs.k8s.io/controller-runtime
-	zapLogr := logger.NewZapLogr(zapLogger)
+	// zapLogr := logger.NewZapLogr(zapLogger)
+	zapLogr := zap.New()
 	ctrlruntimelog.SetLogger(zapLogr)
 
 	// if flag := flag.Lookup("v"); flag != nil {
