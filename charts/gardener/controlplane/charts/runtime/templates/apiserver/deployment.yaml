@@ -230,8 +230,16 @@ spec:
         {{- if .Values.global.apiserver.shutdownDelayDuration }}
         - --shutdown-delay-duration={{ .Values.global.apiserver.shutdownDelayDuration }}
         {{- end }}
+        {{- if .Values.global.apiserver.caFromInline }}
         - --tls-cert-file=/etc/gardener-apiserver/srv/gardener-apiserver.crt
         - --tls-private-key-file=/etc/gardener-apiserver/srv/gardener-apiserver.key
+        {{- else if .Values.global.apiserver.caFromSecret.enabled }}
+        - --tls-cert-file=/etc/gardener-apiserver/srv/tls/tls.crt
+        - --tls-private-key-file=/etc/gardener-apiserver/srv/tls/tls.key
+        {{- else if .Values.global.apiserver.createNewCa }}
+        - --tls-cert-file=/etc/gardener-apiserver/srv/tls/tls.crt
+        - --tls-private-key-file=/etc/gardener-apiserver/srv/tls/tls.key
+        {{- end }}
         {{- include "gardener-apiserver.watchCacheSizes" . | indent 8 }}
         - --v=2
         lifecycle:
@@ -277,6 +285,11 @@ spec:
         - name: gardener-apiserver-cert
           mountPath: /etc/gardener-apiserver/srv
           readOnly: true
+        {{- if or .Values.global.apiserver.caFromSecret.enabled .Values.global.apiserver.createNewCa }}
+        - name: gardener-apiserver-tls
+          mountPath: /etc/gardener-apiserver/srv/tls
+          readOnly: true
+        {{- end }}
         {{- if .Values.global.apiserver.kubeconfig }}
         - name: gardener-apiserver-kubeconfig
           mountPath: /etc/gardener-apiserver/kubeconfig
@@ -348,6 +361,15 @@ spec:
       - name: gardener-apiserver-cert
         secret:
           secretName: gardener-apiserver-cert
+      {{- if .Values.global.apiserver.caFromSecret.enabled }}
+      - name: gardener-apiserver-tls
+        secret:
+          secretName: {{ .Values.global.apiserver.caFromSecret.secretName }}
+      {{- else if .Values.global.apiserver.createNewCa }}
+      - name: gardener-apiserver-tls
+        secret:
+          secretName: gardener-apiserver-tls
+      {{- end }}
       {{- if .Values.global.apiserver.kubeconfig }}
       - name: gardener-apiserver-kubeconfig
         secret:

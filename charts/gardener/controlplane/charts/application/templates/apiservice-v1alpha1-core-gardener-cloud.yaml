@@ -10,9 +10,15 @@ metadata:
     release: "{{ .Release.Name }}"
     heritage: "{{ .Release.Service }}"
 spec:
-  insecureSkipTLSVerify: {{ .Values.global.apiserver.insecureSkipTLSVerify }}
-  {{- if not .Values.global.apiserver.insecureSkipTLSVerify }}
+  {{- if or .Values.global.apiserver.insecureSkipTLSVerify .Values.global.apiserver.createNewCa .Values.global.apiserver.caFromSecret.enabled }}
+  insecureSkipTLSVerify: true
+  {{- else }}
+  insecureSkipTLSVerify: false
+  {{- end }}
+  {{- if .Values.global.apiserver.caFromInline }}
+  {{- if not .Values.global.apiserver.insecureSkipTLSVerify}}
   caBundle: {{ required ".Values.global.apiserver.caBundle is required" (b64enc .Values.global.apiserver.caBundle) }}
+  {{- end }}
   {{- end }}
   group: core.gardener.cloud
   version: v1alpha1

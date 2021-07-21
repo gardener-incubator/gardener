@@ -1,0 +1,49 @@
+{{- if .Values.global.apiserver.createNewCa }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+ name: gardener-ca-selfsigned
+ namespace: garden
+spec:
+ selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+ name: gardener-ca
+ namespace: garden
+spec:
+ secretName: gardener-ca-keypair
+ isCA: true
+ issuerRef:
+   name: gardener-ca-selfsigned
+   kind: Issuer
+ commonName: "Gardener CA"
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+ name: gardener-ca
+ namespace: garden
+spec:
+ ca:
+   secretName: gardener-ca-keypair
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: gardener-apiserver
+  namespace: garden
+spec:
+  secretName: gardener-apiserver-tls
+  duration: 87600h #10y
+  usages:
+    - server auth
+  dnsNames:
+  - localhost
+  - gardener-apiserver
+  - gardener-apiserver.garden
+  - gardener-apiserver.garden.svc
+  issuerRef:
+    name: gardener-ca
+{{- end }}
