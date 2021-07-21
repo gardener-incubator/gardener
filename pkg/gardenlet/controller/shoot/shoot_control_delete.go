@@ -547,10 +547,15 @@ func (c *Controller) runDeleteShootFlow(ctx context.Context, o *operation.Operat
 			Fn:           flow.TaskFn(botanist.DestroyInternalDNSResources),
 			Dependencies: flow.NewTaskIDs(syncPoint),
 		})
+		destroyOwnerDomainDNSRecord = g.Add(flow.Task{
+			Name:         "Destroying owner domain DNS record",
+			Fn:           flow.TaskFn(botanist.DestroyOwnerDNSResources),
+			Dependencies: flow.NewTaskIDs(syncPoint),
+		})
 		deleteDNSProviders = g.Add(flow.Task{
 			Name:         "Deleting additional DNS providers",
 			Fn:           flow.TaskFn(botanist.DeleteDNSProviders),
-			Dependencies: flow.NewTaskIDs(destroyInternalDomainDNSRecord),
+			Dependencies: flow.NewTaskIDs(destroyInternalDomainDNSRecord, destroyOwnerDomainDNSRecord),
 		})
 		destroyReferencedResources = g.Add(flow.Task{
 			Name:         "Deleting referenced resources",

@@ -86,6 +86,7 @@ func New(ctx context.Context, o *operation.Operation) (*Botanist, error) {
 	o.Shoot.Components.Extensions.ExternalDNSRecord = b.DefaultExternalDNSRecord()
 	o.Shoot.Components.Extensions.InternalDNSRecord = b.DefaultInternalDNSRecord()
 	o.Shoot.Components.Extensions.IngressDNSRecord = b.DefaultIngressDNSRecord()
+	o.Shoot.Components.Extensions.OwnerDNSRecord = b.DefaultOwnerDNSRecord()
 	if err != nil {
 		return nil, err
 	}

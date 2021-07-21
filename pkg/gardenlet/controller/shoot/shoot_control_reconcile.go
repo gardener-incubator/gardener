@@ -157,6 +157,11 @@ func (c *Controller) runReconcileShootFlow(ctx context.Context, o *operation.Ope
 			Fn:           flow.TaskFn(botanist.DeployReferencedResources).RetryUntilTimeout(defaultInterval, defaultTimeout),
 			Dependencies: flow.NewTaskIDs(deployNamespace),
 		})
+		deployOwnerDomainDNSRecord = g.Add(flow.Task{
+			Name:         "Deploying owner domain DNS record",
+			Fn:           flow.TaskFn(botanist.DeployOwnerDNSResources),
+			Dependencies: flow.NewTaskIDs(deployReferencedResources),
+		})
 		deployInternalDomainDNSRecord = g.Add(flow.Task{
 			Name:         "Deploying internal domain DNS record",
 			Fn:           flow.TaskFn(botanist.DeployInternalDNSResources).DoIf(!o.Shoot.HibernationEnabled),
@@ -389,7 +394,7 @@ func (c *Controller) runReconcileShootFlow(ctx context.Context, o *operation.Ope
 		_ = g.Add(flow.Task{
 			Name:         "Deploying additional DNS providers",
 			Fn:           flow.TaskFn(botanist.DeployAdditionalDNSProviders).DoIf(!o.Shoot.HibernationEnabled),
-			Dependencies: flow.NewTaskIDs(deployInternalDomainDNSRecord, deployExternalDomainDNSRecord, deployIngressDomainDNSRecord),
+			Dependencies: flow.NewTaskIDs(deployInternalDomainDNSRecord, deployExternalDomainDNSRecord, deployIngressDomainDNSRecord, deployOwnerDomainDNSRecord),
 		})
 		vpnLBReady = g.Add(flow.Task{
 			Name:         "Waiting until vpn-shoot LoadBalancer is ready",

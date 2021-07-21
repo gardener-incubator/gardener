@@ -42,6 +42,8 @@ const (
 	DNSInternalName = "internal"
 	// DNSExternalName is a constant for a DNS resources used for the external domain name.
 	DNSExternalName = "external"
+	// DNSOwnerName is a constant for a DNS resources used for the owner domain name.
+	DNSOwnerName = "owner"
 	// DNSProviderRoleAdditional is a constant for additionally managed DNS providers.
 	DNSProviderRoleAdditional = "managed-dns-provider"
 	// DNSRealmAnnotation is the annotation key for restricting provider access for shoot DNS entries

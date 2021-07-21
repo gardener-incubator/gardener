@@ -20,6 +20,7 @@ import (
 
 	"github.com/sirupsen/logrus"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -60,6 +61,9 @@ type Values struct {
 	Name string
 	// SecretName is the name of the secret referenced by the DNSRecord resource.
 	SecretName string
+	// CreateOnly specifies that the DNSRecord resource should only be created, never updated.
+	// This mode is used for owner DNS records.
+	CreateOnly bool
 	// Type is the type of the DNSRecord provider.
 	Type string
 	// SecretData is the secret data of the DNSRecord (containing provider credentials, etc.)
@@ -135,7 +139,7 @@ func (c *dnsRecord) deploy(ctx context.Context, operation string) (extensionsv1a
 		return nil, err
 	}
 
-	if _, err := controllerutils.GetAndCreateOrMergePatch(ctx, c.client, c.dnsRecord, func() error {
+	mutateFn := func() error {
 		metav1.SetMetaDataAnnotation(&c.dnsRecord.ObjectMeta, v1beta1constants.GardenerOperation, operation)
 		metav1.SetMetaDataAnnotation(&c.dnsRecord.ObjectMeta, v1beta1constants.GardenerTimestamp, TimeNow().UTC().String())
 
@@ -155,8 +159,22 @@ func (c *dnsRecord) deploy(ctx context.Context, operation string) (extensionsv1a
 		}
 
 		return nil
-	}); err != nil {
-		return nil, err
+	}
+
+	if c.values.CreateOnly {
+		if err := c.client.Get(ctx, client.ObjectKeyFromObject(c.dnsRecord), c.dnsRecord); err != nil {
+			if !apierrors.IsNotFound(err) {
+				return nil, err
+			}
+			_ = mutateFn()
+			if err := c.client.Create(ctx, c.dnsRecord); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if _, err := controllerutils.GetAndCreateOrMergePatch(ctx, c.client, c.dnsRecord, mutateFn); err != nil {
+			return nil, err
+		}
 	}
 
 	return c.dnsRecord, nil

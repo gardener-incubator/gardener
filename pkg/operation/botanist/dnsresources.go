@@ -96,6 +96,18 @@ func (b *Botanist) DeployIngressDNSResources(ctx context.Context) error {
 	}
 }
 
+// DeployOwnerDNSResources deploys or deletes the owner DNSRecord resource depending on whether
+// the `UseDNSRecords` feature gate is enabled or not.
+// * If the feature gate is enabled, the DNSRecord resource is deployed (or restored).
+// * Otherwise, it is deleted (owner DNS resources can't be properly maintained without the feature gate).
+func (b *Botanist) DeployOwnerDNSResources(ctx context.Context) error {
+	if gardenletfeatures.FeatureGate.Enabled(features.UseDNSRecords) {
+		return b.DeployOrDestroyOwnerDNSRecord(ctx)
+	} else {
+		return b.DestroyOwnerDNSRecord(ctx)
+	}
+}
+
 // DestroyInternalDNSResources deletes all internal DNS resources (DNSProvider, DNSEntry, DNSOwner, and DNSRecord)
 // that currently exist, to ensure that the DNS record is deleted.
 func (b *Botanist) DestroyInternalDNSResources(ctx context.Context) error {
@@ -123,6 +135,11 @@ func (b *Botanist) DestroyIngressDNSResources(ctx context.Context) error {
 	return b.DestroyIngressDNSRecord(ctx)
 }
 
+// DestroyOwnerDNSResources deletes the owner DNSRecord resource if it exists.
+func (b *Botanist) DestroyOwnerDNSResources(ctx context.Context) error {
+	return b.DestroyOwnerDNSRecord(ctx)
+}
+
 // MigrateInternalDNSResources migrates or deletes all internal DNS resources (DNSProvider, DNSEntry, DNSOwner, and DNSRecord)
 // that currently exist, in the appropriate order to ensure that the DNS record is not deleted.
 func (b *Botanist) MigrateInternalDNSResources(ctx context.Context) error {
@@ -148,4 +165,16 @@ func (b *Botanist) MigrateIngressDNSResources(ctx context.Context) error {
 		return err
 	}
 	return b.MigrateIngressDNSRecord(ctx)
+}
+
+// DeployOwnerDNSResources migrates or deletes the owner DNSRecord resource depending on whether
+// the `UseDNSRecords` feature gate is enabled or not.
+// * If the feature gate is enabled, the DNSRecord resource is migrated.
+// * Otherwise, it is deleted (owner DNS resources can't be properly maintained without the feature gate).
+func (b *Botanist) MigrateOwnerDNSResources(ctx context.Context) error {
+	if gardenletfeatures.FeatureGate.Enabled(features.UseDNSRecords) {
+		return b.MigrateOwnerDNSRecord(ctx)
+	} else {
+		return b.DestroyOwnerDNSRecord(ctx)
+	}
 }

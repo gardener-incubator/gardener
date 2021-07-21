@@ -40,6 +40,10 @@ const (
 	// a Shoot cluster. For example, when a Shoot specifies domain 'cluster.example.com', the apiserver domain would be
 	// 'api.cluster.example.com'.
 	APIServerFQDNPrefix = "api"
+	// OwnerFQDNPrefix is the part of a FQDN which will be used to construct the domain name for the owner of
+	// a Shoot cluster. For example, when a Shoot specifies domain 'cluster.example.com', the owner domain would be
+	// 'owner.cluster.example.com'.
+	OwnerFQDNPrefix = "owner"
 	// IngressPrefix is the part of a FQDN which will be used to construct the domain name for an ingress controller of
 	// a Shoot cluster. For example, when a Shoot specifies domain 'cluster.example.com', the ingress domain would be
 	// '*.<IngressPrefix>.cluster.example.com'.
@@ -85,10 +89,16 @@ func GetDomainInfoFromAnnotations(annotations map[string]string) (provider strin
 	return
 }
 
-// GetAPIServerDomain returns the fully qualified domain name of for the api-server for the Shoot cluster. The
+// GetAPIServerDomain returns the fully qualified domain name for the api-server of the Shoot cluster. The
 // end result is 'api.<domain>'.
 func GetAPIServerDomain(domain string) string {
 	return fmt.Sprintf("%s.%s", APIServerFQDNPrefix, domain)
+}
+
+// GetOwnerDomain returns the fully qualified domain name for the owner of the Shoot cluster. The
+// end result is 'owner.<domain>'.
+func GetOwnerDomain(domain string) string {
+	return fmt.Sprintf("%s.%s", OwnerFQDNPrefix, domain)
 }
 
 // GenerateDNSProviderName creates a name for the dns provider out of the passed `secretName` and `providerType`.
