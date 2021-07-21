@@ -25,56 +25,34 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/utils"
 	gutil "github.com/gardener/gardener/pkg/utils/gardener"
-	"github.com/sirupsen/logrus"
+	"github.com/go-logr/logr"
 	authorizationv1beta1 "k8s.io/api/authorization/v1beta1"
 	certificatesv1beta1 "k8s.io/api/certificates/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/client-go/tools/cache"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 )
 
-func (c *Controller) csrAdd(obj interface{}) {
-	key, err := cache.MetaNamespaceKeyFunc(obj)
-	if err != nil {
-		return
-	}
-	c.csrQueue.Add(key)
+type reconciler struct {
+	logger       logr.Logger
+	gardenClient client.Client
 }
 
-func (c *Controller) csrUpdate(_, newObj interface{}) {
-	c.csrAdd(newObj)
-}
+func (r *reconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+	logger := r.logger.WithValues("csr", request)
 
-// NewCSRReconciler creates a new instance of a reconciler which reconciles CSRs.
-func NewCSRReconciler(l logrus.FieldLogger, gardenClient kubernetes.Interface) reconcile.Reconciler {
-	return &csrReconciler{
-		logger:       l,
-		gardenClient: gardenClient,
-	}
-}
-
-type csrReconciler struct {
-	logger       logrus.FieldLogger
-	gardenClient kubernetes.Interface
-}
-
-func (r *csrReconciler) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
 	csr := &certificatesv1beta1.CertificateSigningRequest{}
-	if err := r.gardenClient.Client().Get(ctx, request.NamespacedName, csr); err != nil {
+	if err := r.gardenClient.Get(ctx, request.NamespacedName, csr); err != nil {
 		if apierrors.IsNotFound(err) {
-			r.logger.Infof("Object %q is gone, stop reconciling: %v", request.Name, err)
+			logger.Info("Object is gone, stop reconciling")
 			return reconcile.Result{}, nil
 		}
-		r.logger.Infof("Unable to retrieve object %q from store: %v", request.Name, err)
+
+		logger.Error(err, "Unable to retrieve object from store")
 		return reconcile.Result{}, err
 	}
-
-	csrLogger := logger.NewFieldLogger(logger.Logger, "csr", csr.Name)
 
 	if len(csr.Status.Certificate) != 0 {
 		return reconcile.Result{}, nil
@@ -98,28 +76,35 @@ func (r *csrReconciler) Reconcile(ctx context.Context, request reconcile.Request
 		return reconcile.Result{}, nil
 	}
 
-	csrLogger.Infof("[CSR APPROVER] %s", csr.Name)
+	logger.Info("Reconciling")
 
-	approved, err := authorize(ctx, r.gardenClient.Client(), csr, authorizationv1beta1.ResourceAttributes{Group: "certificates.k8s.io", Resource: "certificatesigningrequests", Verb: "create", Subresource: "seedclient"})
+	attr := authorizationv1beta1.ResourceAttributes{
+		Group:       "certificates.k8s.io",
+		Resource:    "certificatesigningrequests",
+		Verb:        "create",
+		Subresource: "seedclient",
+	}
+
+	approved, err := authorize(ctx, r.gardenClient, csr, attr)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
 
 	if approved {
-		csrLogger.Infof("[CSR APPROVER] Auto-approving %s", csr.Name)
+		logger.Info("Auto-approving")
 
 		csr.Status.Conditions = append(csr.Status.Conditions, certificatesv1beta1.CertificateSigningRequestCondition{
 			Type:    certificatesv1beta1.CertificateApproved,
 			Reason:  "AutoApproved",
 			Message: "Auto approving gardenlet client certificate after SubjectAccessReview.",
 		})
-		_, err := r.gardenClient.Kubernetes().CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(ctx, csr, kubernetes.DefaultUpdateOptions())
+
+		// TODO:
+		// _, err := r.gardenClient.Kubernetes().CertificatesV1beta1().CertificateSigningRequests().UpdateApproval(ctx, csr, kubernetes.DefaultUpdateOptions())
 		return reconcile.Result{}, err
 	}
 
-	message := fmt.Sprintf("recognized csr %q but subject access review was not approved", csr.Name)
-	csrLogger.Errorf("[CSR APPROVER] %s", message)
-	return reconcile.Result{}, fmt.Errorf(message)
+	return reconcile.Result{}, fmt.Errorf("recognized csr %q but subject access review was not approved", csr.Name)
 }
 
 func authorize(ctx context.Context, c client.Client, csr *certificatesv1beta1.CertificateSigningRequest, resourceAttributes authorizationv1beta1.ResourceAttributes) (bool, error) {

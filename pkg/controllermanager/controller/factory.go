@@ -44,6 +44,7 @@ import (
 	"github.com/gardener/gardener/pkg/logger"
 	"github.com/gardener/gardener/pkg/operation/garden"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"github.com/go-logr/logr"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,6 +52,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/component-base/version"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 )
 
 // GardenControllerFactory contains information relevant to controllers for the Garden API group.
@@ -58,15 +60,68 @@ type GardenControllerFactory struct {
 	cfg       *config.ControllerManagerConfiguration
 	clientMap clientmap.ClientMap
 	recorder  record.EventRecorder
+	logger    logr.Logger
 }
 
 // NewGardenControllerFactory creates a new factory for controllers for the Garden API group.
-func NewGardenControllerFactory(clientMap clientmap.ClientMap, cfg *config.ControllerManagerConfiguration, recorder record.EventRecorder) *GardenControllerFactory {
+func NewGardenControllerFactory(clientMap clientmap.ClientMap, cfg *config.ControllerManagerConfiguration, recorder record.EventRecorder, logger logr.Logger) *GardenControllerFactory {
 	return &GardenControllerFactory{
 		cfg:       cfg,
 		clientMap: clientMap,
 		recorder:  recorder,
+		logger:    logger,
 	}
+}
+
+// AddControllers adds all the controllers for the Garden API group. It also performs bootstrapping tasks.
+func (f *GardenControllerFactory) AddControllers(ctx context.Context, mgr manager.Manager) error {
+	if err := addAllFieldIndexes(ctx, mgr.GetFieldIndexer()); err != nil {
+		return fmt.Errorf("failed to setup field indexes: %w", err)
+	}
+
+	k8sGardenClient, err := f.clientMap.GetClient(ctx, keys.ForGarden())
+	if err != nil {
+		return fmt.Errorf("failed to get garden client: %w", err)
+	}
+
+	runtime.Must(garden.BootstrapCluster(ctx, k8sGardenClient))
+	f.logger.Info("Successfully bootstrapped the Garden cluster.")
+
+	// Setup controllers
+	if err := bastioncontroller.AddToManager(ctx, mgr, f.cfg.Controllers.Bastion); err != nil {
+		return fmt.Errorf("failed to setup bastion controller: %w", err)
+	}
+
+	if err := csrcontroller.AddToManager(ctx, mgr); err != nil {
+		return fmt.Errorf("failed to setup CSR controller: %w", err)
+	}
+
+	if err := cloudprofilecontroller.AddToManager(ctx, mgr, f.cfg.Controllers.CloudProfile); err != nil {
+		return fmt.Errorf("failed to setup cloudprofile controller: %w", err)
+	}
+
+	if err := controllerdeploymentcontroller.AddToManager(ctx, mgr, f.cfg.Controllers.ControllerDeployment); err != nil {
+		return fmt.Errorf("failed to setup controllerdeployment controller: %w", err)
+	}
+
+	if eventControllerConfig := f.cfg.Controllers.Event; eventControllerConfig != nil {
+		if err := eventcontroller.AddToManager(ctx, mgr, eventControllerConfig); err != nil {
+			return fmt.Errorf("failed to setup event controller: %w", err)
+		}
+	}
+
+	if err := quotacontroller.AddToManager(ctx, mgr, f.cfg.Controllers.Quota); err != nil {
+		return fmt.Errorf("failed to setup quota controller: %w", err)
+	}
+
+	if err := secretbindingcontroller.AddToManager(ctx, mgr, f.cfg.Controllers.SecretBinding); err != nil {
+		return fmt.Errorf("failed to setup secretbinding controller: %w", err)
+	}
+
+	// Done :)
+	f.logger.WithValues("version", version.Get().GitVersion).Info("Gardener controller manager initialized.")
+
+	return nil
 }
 
 // Run starts all the controllers for the Garden API group. It also performs bootstrapping tasks.
@@ -98,29 +153,11 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	gardenmetrics.RegisterWorkqueMetrics()
 
 	// Create controllers.
-	bastionController, err := bastioncontroller.NewBastionController(ctx, f.clientMap, f.cfg.Controllers.Bastion.MaxLifetime.Duration)
-	if err != nil {
-		return fmt.Errorf("failed initializing Bastion controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, bastionController)
-
-	cloudProfileController, err := cloudprofilecontroller.NewCloudProfileController(ctx, f.clientMap, f.recorder)
-	if err != nil {
-		return fmt.Errorf("failed initializing CloudProfile controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, cloudProfileController)
-
 	controllerRegistrationController, err := controllerregistrationcontroller.NewController(ctx, f.clientMap)
 	if err != nil {
 		return fmt.Errorf("failed initializing ControllerRegistration controller: %w", err)
 	}
 	metricsCollectors = append(metricsCollectors, controllerRegistrationController)
-
-	csrController, err := csrcontroller.NewCSRController(ctx, f.clientMap)
-	if err != nil {
-		return fmt.Errorf("failed initializing CSR controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, csrController)
 
 	exposureClassController, err := exposureclasscontroller.NewExposureClassController(ctx, f.clientMap, f.recorder)
 	if err != nil {
@@ -140,29 +177,11 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	}
 	metricsCollectors = append(metricsCollectors, projectController)
 
-	quotaController, err := quotacontroller.NewQuotaController(ctx, f.clientMap, f.recorder)
-	if err != nil {
-		return fmt.Errorf("failed initializing Quota controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, quotaController)
-
-	secretBindingController, err := secretbindingcontroller.NewSecretBindingController(ctx, f.clientMap, f.recorder)
-	if err != nil {
-		return fmt.Errorf("failed initializing SecretBinding controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, secretBindingController)
-
 	seedController, err := seedcontroller.NewSeedController(ctx, f.clientMap, f.cfg)
 	if err != nil {
 		return fmt.Errorf("failed initializing Seed controller: %w", err)
 	}
 	metricsCollectors = append(metricsCollectors, seedController)
-
-	controllerDeploymentController, err := controllerdeploymentcontroller.New(ctx, f.clientMap, logger.Logger)
-	if err != nil {
-		return fmt.Errorf("failed initializing ControllerDeployment controller: %w", err)
-	}
-	metricsCollectors = append(metricsCollectors, controllerDeploymentController)
 
 	shootController, err := shootcontroller.NewShootController(ctx, f.clientMap, f.cfg, f.recorder)
 	if err != nil {
@@ -176,29 +195,13 @@ func (f *GardenControllerFactory) Run(ctx context.Context) error {
 	}
 	metricsCollectors = append(metricsCollectors, managedSeedSetController)
 
-	go bastionController.Run(ctx, f.cfg.Controllers.Bastion.ConcurrentSyncs)
-	go cloudProfileController.Run(ctx, f.cfg.Controllers.CloudProfile.ConcurrentSyncs)
-	go controllerDeploymentController.Run(ctx, f.cfg.Controllers.ControllerDeployment.ConcurrentSyncs)
 	go controllerRegistrationController.Run(ctx, f.cfg.Controllers.ControllerRegistration.ConcurrentSyncs)
-	go csrController.Run(ctx, 1)
 	go plantController.Run(ctx, f.cfg.Controllers.Plant.ConcurrentSyncs)
 	go projectController.Run(ctx, f.cfg.Controllers.Project.ConcurrentSyncs)
-	go quotaController.Run(ctx, f.cfg.Controllers.Quota.ConcurrentSyncs)
-	go secretBindingController.Run(ctx, f.cfg.Controllers.SecretBinding.ConcurrentSyncs)
 	go seedController.Run(ctx, f.cfg.Controllers.Seed.ConcurrentSyncs)
 	go shootController.Run(ctx, f.cfg.Controllers.ShootMaintenance.ConcurrentSyncs, f.cfg.Controllers.ShootQuota.ConcurrentSyncs, f.cfg.Controllers.ShootHibernation.ConcurrentSyncs, f.cfg.Controllers.ShootReference.ConcurrentSyncs, f.cfg.Controllers.ShootRetry.ConcurrentSyncs)
 	go exposureClassController.Run(ctx, f.cfg.Controllers.ExposureClass.ConcurrentSyncs)
 	go managedSeedSetController.Run(ctx, f.cfg.Controllers.ManagedSeedSet.ConcurrentSyncs)
-
-	if eventControllerConfig := f.cfg.Controllers.Event; eventControllerConfig != nil {
-		eventController, err := eventcontroller.NewController(ctx, f.clientMap, eventControllerConfig)
-		if err != nil {
-			return fmt.Errorf("failed initializing Event controller: %w", err)
-		}
-		metricsCollectors = append(metricsCollectors, eventController)
-
-		go eventController.Run(ctx)
-	}
 
 	// Initialize the Controller metrics collection.
 	gardenmetrics.RegisterControllerMetrics(controllermanager.ControllerWorkerSum, controllermanager.ScrapeFailures, metricsCollectors...)
