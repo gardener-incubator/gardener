@@ -107,8 +107,13 @@ spec:
             cpu: 50m
             memory: 50Mi
           limits:
-            cpu: 50m
-            memory: 50Mi
+          {{- if .Values.global.vpaEnabled }}
+            cpu: 150m
+            memory: 150Mi
+          {{- else }}
+            cpu: 200m
+            memory: 200Mi
+          {{- end }}
         volumeMounts:
         - name: host
           readOnly: true
