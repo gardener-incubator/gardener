@@ -207,7 +207,7 @@ spec:
 To support ContainerD, an OS extension must :
 1. The operating system must have built-in  [ContainerD](https://containerd.io/) and the  [Client CLI](https://github.com/projectatomic/containerd/blob/master/docs/cli.md/)
 1. ContainerD must listen on its default socket path: `unix:///run/containerd/containerd.sock`
-1. ContainerD must be configured to work with the default configuration file in: `/etc/containerd.config.toml` (Created by Gardener).
+1. ContainerD must be configured to work with the default configuration file in: `/etc/containerd/config.toml` (Created by Gardener).
 
 If CRI configurations are not supported it is recommended create a validating webhook running in the garden cluster that prevents specifying the `.spec.providers.workers[].cri` section in the `Shoot` objects.
 

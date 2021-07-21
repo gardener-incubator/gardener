@@ -98,7 +98,7 @@ const (
 	initScript              = `#!/bin/bash
 
 FILE=/etc/containerd/config.toml
-if [ ! -f "$FILE" ]; then
+if [ ! -s "$FILE" ]; then
   mkdir -p /etc/containerd
   containerd config default > "$FILE"
 fi
