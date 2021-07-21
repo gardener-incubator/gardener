@@ -37,10 +37,14 @@ data:
       retryPeriod: {{ required ".Values.global.scheduler.config.leaderElection.retryPeriod is required" .Values.global.scheduler.config.leaderElection.retryPeriod }}
       resourceLock: {{ required ".Values.global.scheduler.config.leaderElection.resourceLock is required" .Values.global.scheduler.config.leaderElection.resourceLock }}
     logLevel: {{ required ".Values.global.scheduler.config.logLevel is required" .Values.global.scheduler.config.logLevel }}
-    server:
+    healthServer:
       http:
-        bindAddress: {{ required ".Values.global.scheduler.config.server.http.bindAddress is required" .Values.global.scheduler.config.server.http.bindAddress }}
-        port: {{ required ".Values.global.scheduler.config.server.http.port is required" .Values.global.scheduler.config.server.http.port }}
+        bindAddress: {{ required ".Values.global.scheduler.config.healthServer.http.bindAddress is required" .Values.global.scheduler.config.healthServer.http.bindAddress }}
+        port: {{ required ".Values.global.scheduler.config.healthServer.http.port is required" .Values.global.scheduler.config.healthServer.http.port }}
+    metricsServer:
+      http:
+        bindAddress: {{ required ".Values.global.scheduler.config.metricsServer.http.bindAddress is required" .Values.global.scheduler.config.metricsServer.http.bindAddress }}
+        port: {{ required ".Values.global.scheduler.config.metricsServer.http.port is required" .Values.global.scheduler.config.metricsServer.http.port }}
     {{- if .Values.global.scheduler.config.schedulers }}
     schedulers:
       {{- if .Values.global.scheduler.config.schedulers.backupBucket }}

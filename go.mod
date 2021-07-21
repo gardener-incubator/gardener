@@ -19,6 +19,7 @@ require (
 	github.com/gardener/machine-controller-manager v0.33.0
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v0.4.0
+	github.com/go-logr/zapr v0.4.0
 	github.com/go-openapi/spec v0.19.5
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/mock v1.6.0

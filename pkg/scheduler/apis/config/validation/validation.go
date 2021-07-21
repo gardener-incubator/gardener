@@ -17,15 +17,32 @@ package validation
 import (
 	"fmt"
 
+	"github.com/gardener/gardener/pkg/logger"
 	schedulerapi "github.com/gardener/gardener/pkg/scheduler/apis/config"
+	"k8s.io/apimachinery/pkg/util/sets"
 )
 
 // ValidateConfiguration validates the configuration.
 func ValidateConfiguration(config *schedulerapi.SchedulerConfiguration) error {
-	for _, strategy := range schedulerapi.Strategies {
-		if strategy == config.Schedulers.Shoot.Strategy {
+	if err := validateStrategy(config.Schedulers.Shoot.Strategy); err != nil {
+		return fmt.Errorf("invalid seed determination strategy: %w", err)
+	}
+
+	if config.LogLevel != "" {
+		if !sets.NewString(logger.AllLogLevels...).Has(config.LogLevel) {
+			return fmt.Errorf("invalid log level %q, valid levels are %v", config.LogLevel, logger.AllLogLevels)
+		}
+	}
+
+	return nil
+}
+
+func validateStrategy(strategy schedulerapi.CandidateDeterminationStrategy) error {
+	for _, s := range schedulerapi.Strategies {
+		if s == strategy {
 			return nil
 		}
 	}
-	return fmt.Errorf("unknown seed determination strategy configured in gardener scheduler. Strategy: '%s' does not exist. Valid strategies are: %v", config.Schedulers.Shoot.Strategy, schedulerapi.Strategies)
+
+	return fmt.Errorf("strategy %q does not exist, valid strategies are %v", strategy, schedulerapi.Strategies)
 }
