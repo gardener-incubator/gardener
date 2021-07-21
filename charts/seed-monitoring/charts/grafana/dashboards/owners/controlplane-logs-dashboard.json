@@ -1,12 +1,21 @@
-{{- define "logging-dashboard" -}}
 {
     "annotations": {
-      "list": []
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": "-- Grafana --",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
     },
     "editable": true,
     "gnetId": null,
     "graphTooltip": 0,
-    "iteration": 1611650877419,
+    "iteration": 1626335460760,
     "links": [],
     "panels": [
       {
@@ -15,7 +24,6 @@
         "description": "Shows the percentage of replicas that are up and running.",
         "fieldConfig": {
           "defaults": {
-            "custom": {},
             "mappings": [],
             "thresholds": {
               "mode": "absolute",
@@ -61,12 +69,14 @@
             "fields": "",
             "values": false
           },
+          "text": {},
           "textMode": "auto"
         },
-        "pluginVersion": "7.2.1",
+        "pluginVersion": "7.5.7",
         "targets": [
           {
-            "expr": "count(up{job=\"$component\"} == 1) / count(up{job=\"$component\"})",
+            "exemplar": true,
+            "expr": "count(up{pod=~\"$pod\"} == 1) / count(up{pod=~\"$pod\"})",
             "format": "time_series",
             "instant": false,
             "interval": "",
@@ -90,7 +100,7 @@
         "description": "Shows the CPU usage and shows the requests and limits.",
         "fieldConfig": {
           "defaults": {
-            "custom": {}
+            "links": []
           },
           "overrides": []
         },
@@ -118,9 +128,10 @@
         "links": [],
         "nullPointMode": "null",
         "options": {
-          "dataLinks": []
+          "alertThreshold": true
         },
         "percentage": false,
+        "pluginVersion": "7.5.7",
         "pointradius": 2,
         "points": false,
         "renderer": "flot",
@@ -130,24 +141,30 @@
         "steppedLine": false,
         "targets": [
           {
-            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"$component-(.+)\"}[$__rate_interval])) by (pod)",
+            "exemplar": true,
+            "expr": "sum(rate(container_cpu_usage_seconds_total{pod=~\"$pod\"}[$__rate_interval])) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-current",
+            "legendFormat": "{{pod}}-current",
             "refId": "A"
           },
           {
-            "expr": "sum(kube_pod_container_resource_limits_cpu_cores{pod=~\"$component-(.+)\"}) by (pod)",
+            "exemplar": true,
+            "expr": "sum(kube_pod_container_resource_limits_cpu_cores{pod=~\"$pod\"}) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-limits",
+            "legendFormat": "{{pod}}-limits",
             "refId": "C"
           },
           {
-            "expr": "sum(kube_pod_container_resource_requests_cpu_cores{pod=~\"$component-(.+)\"}) by (pod)",
+            "exemplar": true,
+            "expr": "sum(kube_pod_container_resource_requests_cpu_cores{pod=~\"$pod\"}) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-requests",
+            "legendFormat": "{{pod}}-requests",
             "refId": "B"
           }
         ],
@@ -202,7 +219,7 @@
         "description": "Shows the memory usage.",
         "fieldConfig": {
           "defaults": {
-            "custom": {}
+            "links": []
           },
           "overrides": []
         },
@@ -230,9 +247,10 @@
         "links": [],
         "nullPointMode": "null",
         "options": {
-          "dataLinks": []
+          "alertThreshold": true
         },
         "percentage": false,
+        "pluginVersion": "7.5.7",
         "pointradius": 2,
         "points": false,
         "renderer": "flot",
@@ -242,24 +260,30 @@
         "steppedLine": false,
         "targets": [
           {
-            "expr": "sum(container_memory_working_set_bytes{pod=~\"$component-(.+)\"}) by (pod)",
+            "exemplar": true,
+            "expr": "sum(container_memory_working_set_bytes{pod=~\"$pod\"}) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-current",
+            "legendFormat": "{{pod}}-current",
             "refId": "A"
           },
           {
-            "expr": "sum(kube_pod_container_resource_limits_memory_bytes{pod=~\"$component-(.+)\"}) by (pod)",
+            "exemplar": true,
+            "expr": "sum(kube_pod_container_resource_limits_memory_bytes{pod=~\"$pod\"}) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-limits",
+            "legendFormat": "{{pod}}-limits",
             "refId": "B"
           },
           {
-            "expr": "sum(kube_pod_container_resource_requests_memory_bytes{pod=~\"$component-(.+)\"}) by (pod)",
+            "exemplar": true,
+            "expr": "sum(kube_pod_container_resource_requests_memory_bytes{pod=~\"$pod\"}) by (pod)",
             "format": "time_series",
+            "interval": "",
             "intervalFactor": 1,
-            "legendFormat": "{{ "{{" }}pod}}-requests",
+            "legendFormat": "{{pod}}-requests",
             "refId": "C"
           }
         ],
@@ -307,9 +331,7 @@
       {
         "datasource": "loki",
         "fieldConfig": {
-          "defaults": {
-            "custom": {}
-          },
+          "defaults": {},
           "overrides": []
         },
         "gridPos": {
@@ -321,6 +343,7 @@
         "id": 43,
         "interval": "",
         "options": {
+          "dedupStrategy": "none",
           "showLabels": false,
           "showTime": true,
           "sortOrder": "Descending",
@@ -328,7 +351,7 @@
         },
         "targets": [
           {
-            "expr": "{pod_name=~\"$component-(.+)\", container_name=~\"$container\", severity=~\"$severity\"} |~ \"$search\"",
+            "expr": "{pod_name=~\"$pod\", container_name=~\"$container\", severity=~\"$severity\"} |~ \"$search\"",
             "refId": "A"
           }
         ],
@@ -339,7 +362,7 @@
       }
     ],
     "refresh": "1m",
-    "schemaVersion": 26,
+    "schemaVersion": 27,
     "style": "dark",
     "tags": [
       "controlplane",
@@ -349,53 +372,32 @@
     "templating": {
       "list": [
         {
-          "allValue": "",
+          "allValue": ".+",
           "current": {
             "selected": true,
-            "text": "{{ (index . 0).PodPrefix }}",
-            "value": "{{ (index . 0).PodPrefix }}"
+            "tags": [],
+            "text": [
+              "kube-apiserver-5479b9f94f-b246w"
+            ],
+            "value": [
+              "kube-apiserver-5479b9f94f-b246w"
+            ]
           },
-          "hide": 0,
-          "includeAll": false,
-          "label": "Component",
-          "multi": false,
-          "name": "component",
-          "options": [
-            {
-              "selected": true
-            }{{ range $i, $c := . }},
-            {
-              "selected": false,
-              "text": "{{ $c.PodPrefix }}",
-              "value": "{{ $c.PodPrefix }}"
-            }
-              {{- end }}
-          ],
-          "query": "",
-          "queryValue": "",
-          "skipUrlSync": false,
-          "type": "custom"
-        },
-        {
-          "allValue": null,
-          "current": {
-            "selected": false,
-            "text": "All",
-            "value": "$__all"
-          },
-          "datasource": "prometheus",
-          "definition": "label_values(kube_pod_container_info{type=~\"seed\", pod=~\"$component.+\"}, container)",
+          "datasource": "loki",
+          "definition": "label_values(pod_name)",
+          "description": null,
+          "error": null,
           "hide": 0,
           "includeAll": true,
-          "label": "Container",
-          "multi": false,
-          "name": "container",
+          "label": "pod",
+          "multi": true,
+          "name": "pod",
           "options": [],
-          "query": "label_values(kube_pod_container_info{type=~\"seed\", pod=~\"$component.+\"}, container)",
-          "refresh": 2,
+          "query": "label_values(pod_name)",
+          "refresh": 1,
           "regex": "",
           "skipUrlSync": false,
-          "sort": 0,
+          "sort": 1,
           "tagValuesQuery": "",
           "tags": [],
           "tagsQuery": "",
@@ -413,6 +415,46 @@
               "$__all"
             ]
           },
+          "datasource": "prometheus",
+          "definition": "label_values(kube_pod_container_info{type=~\"seed\", pod=~\"$pod\"}, container)",
+          "description": null,
+          "error": null,
+          "hide": 0,
+          "includeAll": true,
+          "label": "Container",
+          "multi": true,
+          "name": "container",
+          "options": [],
+          "query": {
+            "query": "label_values(kube_pod_container_info{type=~\"seed\", pod=~\"$pod\"}, container)",
+            "refId": "StandardVariableQuery"
+          },
+          "refresh": 2,
+          "regex": "",
+          "skipUrlSync": false,
+          "sort": 0,
+          "tagValuesQuery": "",
+          "tags": [],
+          "tagsQuery": "",
+          "type": "query",
+          "useTags": false
+        },
+        {
+          "allValue": ".*",
+          "current": {
+            "selected": true,
+            "tags": [],
+            "text": [
+              "All"
+            ],
+            "value": [
+              "$__all"
+            ]
+          },
+          "datasource": "loki",
+          "definition": "label_values(severity)",
+          "description": null,
+          "error": null,
           "hide": 0,
           "includeAll": true,
           "label": "Severity",
@@ -426,23 +468,13 @@
             },
             {
               "selected": false,
-              "text": "INFO",
-              "value": "INFO"
-            },
-            {
-              "selected": false,
-              "text": "WARN",
-              "value": "WARN"
-            },
-            {
-              "selected": false,
               "text": "ERR",
               "value": "ERR"
             },
             {
               "selected": false,
-              "text": "DBG",
-              "value": "DBG"
+              "text": "INFO",
+              "value": "INFO"
             },
             {
               "selected": false,
@@ -451,14 +483,20 @@
             },
             {
               "selected": false,
-              "text": "FATAL",
-              "value": "FATAL"
+              "text": "WARN",
+              "value": "WARN"
             }
           ],
-          "query": "INFO,WARN,ERR,DBG,NOTICE,FATAL",
-          "queryValue": "",
+          "query": "label_values(severity)",
+          "refresh": 0,
+          "regex": "",
           "skipUrlSync": false,
-          "type": "custom"
+          "sort": 0,
+          "tagValuesQuery": "",
+          "tags": [],
+          "tagsQuery": "",
+          "type": "query",
+          "useTags": false
         },
         {
           "current": {
@@ -466,6 +504,8 @@
             "text": "",
             "value": ""
           },
+          "description": null,
+          "error": null,
           "hide": 0,
           "label": "Search",
           "name": "search",
@@ -512,6 +552,6 @@
     },
     "timezone": "utc",
     "title": "Controlplane Logs Dashboard",
+    "uid": "FmVvNEink",
     "version": 1
   }
-{{- end -}}

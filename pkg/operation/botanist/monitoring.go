@@ -34,7 +34,6 @@ import (
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/secrets"
 
-	"gopkg.in/yaml.v2"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
@@ -53,16 +52,14 @@ func (b *Botanist) DeploySeedMonitoring(ctx context.Context) error {
 	}
 
 	var (
-		credentials           = b.Secrets[common.MonitoringIngressCredentials]
-		credentialsUsers      = b.Secrets[common.MonitoringIngressCredentialsUsers]
-		basicAuth             = utils.CreateSHA1Secret(credentials.Data[secrets.DataKeyUserName], credentials.Data[secrets.DataKeyPassword])
-		basicAuthUsers        = utils.CreateSHA1Secret(credentialsUsers.Data[secrets.DataKeyUserName], credentialsUsers.Data[secrets.DataKeyPassword])
-		alertingRules         = strings.Builder{}
-		scrapeConfigs         = strings.Builder{}
-		operatorsDashboards   = strings.Builder{}
-		usersDashboards       = strings.Builder{}
-		usersObservedPods     = make([]ObservedPod, 0)
-		operatorsObservedPods = make([]ObservedPod, 0)
+		credentials         = b.Secrets[common.MonitoringIngressCredentials]
+		credentialsUsers    = b.Secrets[common.MonitoringIngressCredentialsUsers]
+		basicAuth           = utils.CreateSHA1Secret(credentials.Data[secrets.DataKeyUserName], credentials.Data[secrets.DataKeyPassword])
+		basicAuthUsers      = utils.CreateSHA1Secret(credentialsUsers.Data[secrets.DataKeyUserName], credentialsUsers.Data[secrets.DataKeyPassword])
+		alertingRules       = strings.Builder{}
+		scrapeConfigs       = strings.Builder{}
+		operatorsDashboards = strings.Builder{}
+		usersDashboards     = strings.Builder{}
 	)
 
 	// Fetch component-specific monitoring configuration
@@ -106,49 +103,12 @@ func (b *Botanist) DeploySeedMonitoring(ctx context.Context) error {
 	// Need stable order before passing the dashboards to Grafana config to avoid unnecessary changes
 	kutil.ByName().Sort(existingConfigMaps)
 
-	// Apply controlplane user exposed pods
-	cpObservedPods := []ObservedPod{
-		{PodPrefix: "kube-apiserver", IsExposedToUser: true},
-		{PodPrefix: "kube-controller-manager", IsExposedToUser: true},
-		{PodPrefix: "kube-scheduler", IsExposedToUser: true},
-		{PodPrefix: "cluster-autoscaler", IsExposedToUser: true},
-	}
-
-	if b.Shoot.WantsVerticalPodAutoscaler {
-		vpaObservedPods := []ObservedPod{
-			{PodPrefix: "vpa-admission-controller", IsExposedToUser: true},
-			{PodPrefix: "vpa-recommender", IsExposedToUser: true},
-			{PodPrefix: "vpa-updater", IsExposedToUser: true},
-		}
-
-		cpObservedPods = append(cpObservedPods, vpaObservedPods...)
-	}
-
-	usersObservedPods = append(usersObservedPods, cpObservedPods...)
-	operatorsObservedPods = append(operatorsObservedPods, cpObservedPods...)
-
 	// Read extension monitoring configurations
 	for _, cm := range existingConfigMaps.Items {
 		alertingRules.WriteString(fmt.Sprintln(cm.Data[v1beta1constants.PrometheusConfigMapAlertingRules]))
 		scrapeConfigs.WriteString(fmt.Sprintln(cm.Data[v1beta1constants.PrometheusConfigMapScrapeConfig]))
 		operatorsDashboards.WriteString(fmt.Sprintln(cm.Data[v1beta1constants.GrafanaConfigMapOperatorDashboard]))
 		usersDashboards.WriteString(fmt.Sprintln(cm.Data[v1beta1constants.GrafanaConfigMapUserDashboard]))
-
-		components := cm.Data["observedComponents"]
-
-		var observedComponents ObservedComponents
-
-		err := yaml.Unmarshal([]byte(components), &observedComponents)
-		if err != nil {
-			return err
-		}
-		for _, pod := range observedComponents.ObservedPods {
-			if pod.IsExposedToUser {
-				usersObservedPods = append(usersObservedPods, pod)
-			}
-
-			operatorsObservedPods = append(operatorsObservedPods, pod)
-		}
 	}
 
 	alerting, err := b.getCustomAlertingConfigs(ctx, b.GetSecretKeysOfRole(v1beta1constants.GardenRoleAlerting))
@@ -268,11 +228,11 @@ func (b *Botanist) DeploySeedMonitoring(ctx context.Context) error {
 		return err
 	}
 
-	if err := b.deployGrafanaCharts(ctx, common.GrafanaOperatorsRole, operatorsDashboards.String(), basicAuth, common.GrafanaOperatorsPrefix, operatorsObservedPods); err != nil {
+	if err := b.deployGrafanaCharts(ctx, common.GrafanaOperatorsRole, operatorsDashboards.String(), basicAuth, common.GrafanaOperatorsPrefix); err != nil {
 		return err
 	}
 
-	if err := b.deployGrafanaCharts(ctx, common.GrafanaUsersRole, usersDashboards.String(), basicAuthUsers, common.GrafanaUsersPrefix, usersObservedPods); err != nil {
+	if err := b.deployGrafanaCharts(ctx, common.GrafanaUsersRole, usersDashboards.String(), basicAuthUsers, common.GrafanaUsersPrefix); err != nil {
 		return err
 	}
 
@@ -424,7 +384,7 @@ func (b *Botanist) getCustomAlertingConfigs(ctx context.Context, alertingSecretK
 	return configs, nil
 }
 
-func (b *Botanist) deployGrafanaCharts(ctx context.Context, role, dashboards, basicAuth, subDomain string, observedPods []ObservedPod) error {
+func (b *Botanist) deployGrafanaCharts(ctx context.Context, role, dashboards, basicAuth, subDomain string) error {
 	grafanaTLSOverride := common.GrafanaTLS
 	if b.ControlPlaneWildcardCert != nil {
 		grafanaTLSOverride = b.ControlPlaneWildcardCert.GetName()
@@ -446,8 +406,7 @@ func (b *Botanist) deployGrafanaCharts(ctx context.Context, role, dashboards, ba
 		"replicas": b.Shoot.GetReplicas(1),
 		"role":     role,
 		"extensions": map[string]interface{}{
-			"dashboards":   dashboards,
-			"observedPods": observedPods,
+			"dashboards": dashboards,
 		},
 		"vpaEnabled": b.Shoot.WantsVerticalPodAutoscaler,
 		"sni": map[string]interface{}{
@@ -581,17 +540,4 @@ func (b *Botanist) DeleteSeedMonitoring(ctx context.Context) error {
 	}
 
 	return kutil.DeleteObjects(ctx, b.K8sSeedClient.Client(), objects...)
-}
-
-// ObservedComponents is a struct from all observed pods
-type ObservedComponents struct {
-	ObservedPods []ObservedPod `yaml:"observedPods"`
-}
-
-// ObservedPod holds Pod configuration monitored by Grafana
-type ObservedPod struct {
-	// PodPrefix contains the prefix (deployment name) for a specific pod
-	PodPrefix string `yaml:"podPrefix"`
-	// IsExposedToUser is a flag which represents if the Pod logs should be exposed to the end users
-	IsExposedToUser bool `yaml:"isExposedToUser"`
 }

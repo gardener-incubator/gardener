@@ -18,9 +18,6 @@ vpaEnabled: false
 role: operators
 extensions:
   dashboards: ""
-  observedPods:
-  - PodPrefix: example-pod
-    IsExposedToUser: true
 
 sni:
   enabled: false
