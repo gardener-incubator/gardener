@@ -174,6 +174,14 @@ func (d *DeletionConfirmation) Validate(ctx context.Context, a admission.Attribu
 			if shootIgnored(obj) {
 				return fmt.Errorf("cannot delete shoot if %s annotation is set", v1beta1constants.ShootIgnore)
 			}
+			shoot, ok := obj.(*core.Shoot)
+			if !ok {
+				return apierrors.NewInternalError(errors.New("could not convert resource into Shoot object"))
+			}
+			if shoot.Status.LastOperation != nil && (shoot.Status.LastOperation.Type == core.LastOperationTypeRestore ||
+				shoot.Status.LastOperation.Type == core.LastOperationTypeMigrate) {
+				return admission.NewForbidden(a, fmt.Errorf("cannot mark shoot %s for deletion during %s operation", shoot.Name, shoot.Status.LastOperation.Type))
+			}
 			return gutil.CheckIfDeletionIsConfirmed(obj)
 		}
 
