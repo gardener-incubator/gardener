@@ -14,9 +14,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+QUIC_CLIENT_IMAGE=ghcr.io/mvladev/quic-reverse-http-tunnel/quic-client-tcp:v0.1.2
+QUIC_SERVER_IMAGE=ghcr.io/mvladev/quic-reverse-http-tunnel/quic-server:v0.1.2
+
+QUIC_SECRET_NAME=quic-tunnel-certs
+QUIC_CLIENT_CONTAINER=gardener-quic-client
+
+CERTS_DIR=$(pwd)/tmp/certs
+
 checkPrereqs() {
   command -v host > /dev/null || echo "please install host command for lookup"
-  command -v inlets > /dev/null || echo "please install the inlets command. For mac, simply use \`brew install inlets\`, for linux \`curl -sLS https://get.inlets.dev | sudo sh\`"
+  command -v docker > /dev/null || echo "please install docker https://www.docker.com"
 }
 
 createOrUpdateWebhookSVC(){
@@ -26,8 +34,8 @@ namespace=${1:-}
 providerName=${2:-}
 [[ -z $providerName ]] && echo "Please specify the provider name (aws,gcp,azure,..etc.)!" && exit 1
 
-local inletsServerPort=${3:-}
-[[ -z $inletsServerPort ]] && echo "Please specify the inlets pod server port!" && exit 1
+local quicServerPort=${3:-}
+[[ -z $quicServerPort ]] && echo "Please specify the quic pod server port!" && exit 1
 
 tmpService=$(mktemp)
 kubectl get svc gardener-extension-provider-$providerName -o yaml > $tmpService
@@ -47,9 +55,9 @@ spec:
   ports:
   - port: 443
     protocol: TCP
-    targetPort: $inletsServerPort
+    targetPort: $quicServerPort
   selector:
-    app: inlets-server
+    app: quic-server
     app.kubernetes.io/instance: provider-$providerName
     app.kubernetes.io/name: gardener-extension-provider-$providerName
   type: ClusterIP
@@ -57,9 +65,12 @@ EOF
 }
 
 
-createInletsLB(){
+createQuicLB(){
 namespace=${1:-}
 [[ -z $namespace ]] && echo "Please specify extension namespace!" && exit 1
+
+local quicTunnelPort=${2:-}
+[[ -z $quicTunnelPort ]] && echo "Please specify the quic pod tunnel port!" && exit 1
 
 cat <<EOF | kubectl apply -f -
 ---
@@ -67,147 +78,212 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app: inlets-lb
-  name: inlets-lb
+    app: quic-lb
+  name: quic-lb
   namespace: $namespace
 spec:
   externalTrafficPolicy: Cluster
   ports:
-  - name: 8000-8080
-    port: 8000
-    protocol: TCP
-    targetPort: 8080
+  - name: quic-tunnel-port
+    port: $quicTunnelPort
+    protocol: UDP
+    targetPort: $quicTunnelPort
   selector:
-    app: inlets-server
+    app: quic-server
   type: LoadBalancer
 EOF
 }
 
-waitForInletsLBToBeReady(){
+waitForQuicLBToBeReady(){
     namespace=${1:-}
     [[ -z $namespace ]] && echo "Please specify extension namespace!" && exit 1
 
     providerName=${2:-}
     [[ -z $providerName ]] && echo "Please specify the provider name (aws,gcp,azure,..etc.)!" && exit 1
 
+    # slightly different template for aws and everything else
+    local template=""
     case $providerName in
     aws*)
-      until host $(kubectl -n $namespace get svc inlets-lb -o go-template="{{ index (index  .status.loadBalancer.ingress 0).hostname }}") 2>&1 > /dev/null
-      do
-        sleep 2s
-      done
-      echo $(kubectl -n $namespace get svc inlets-lb -o go-template="{{ index (index  .status.loadBalancer.ingress 0).hostname }}")
+      template="{{ index (index  .status.loadBalancer.ingress 0).hostname }}"
       ;;
     *)
-      until host $(kubectl -n $namespace get svc inlets-lb -o go-template="{{ index (index  .status.loadBalancer.ingress 0).ip }}") 2>&1 > /dev/null
-      do
-        sleep 2s
-      done
-      echo $(kubectl -n $namespace get svc inlets-lb -o go-template="{{ index (index  .status.loadBalancer.ingress 0).ip }}")      ;;
+      template="{{ index (index  .status.loadBalancer.ingress 0).ip }}"
+      ;;
     esac
+    until host $(kubectl -n $namespace get svc quic-lb -o go-template="${template}") 2>&1 > /dev/null
+    do
+      sleep 2s
+    done
+    echo $(kubectl -n $namespace get svc quic-lb -o go-template="${template}")
 }
 
-createServerPod(){
+createServerDeploy(){
 namespace=${1:-}
 [[ -z $namespace ]] && echo "Please specify extension namespace!" && exit 1
 
 providerName=${2:-}
 [[ -z $providerName ]] && echo "Please specify the provider name (aws,gcp,azure,..etc.)!" && exit 1
 
-local inletsServerPort=${3:-}
-[[ -z $inletsServerPort ]] && echo "Please specify the inlets pod server port!" && exit 1
+local quicServerPort=${3:-}
+[[ -z $quicServerPort ]] && echo "Please specify the quic pod server port!" && exit 1
+
+local quicTunnelPort=${4:-}
+[[ -z $quicTunnelPort ]] && echo "Please specify the quic pod tunnel port!" && exit 1
 
 cat <<EOF | kubectl apply -f -
 ---
-apiVersion: v1
-kind: Pod
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   labels:
-    app: inlets-server
+    app: quic-server
     app.kubernetes.io/instance: provider-$providerName
     app.kubernetes.io/name: gardener-extension-provider-$providerName
     networking.gardener.cloud/to-dns: allowed
     networking.gardener.cloud/to-public-networks: allowed
-  name: inlets-server
+  name: quic-server
   namespace: $namespace
 spec:
-  containers:
-  - args:
-    - "server"
-    - "-p"
-    - "8080"
-    - "-t"
-    - "21d809ed61915c9177fbceeaa87e307e766be5f2"
-    image: ghcr.io/inlets/inlets:2.7.11
-    imagePullPolicy: IfNotPresent
-    name: inlets-server
-    resources:
-      limits:
-        cpu: 50m
-        memory: 128Mi
-      requests:
-        cpu: 20m
-        memory: 64Mi
-  - args:
-    - "server"
-    - "--target"
-    - "127.0.0.1:8080"
-    - "--listen"
-    - "0.0.0.0:$inletsServerPort"
-    - "--cacert"
-    - "/etc/tls/ca.crt"
-    - "--cert"
-    - "/etc/tls/tls.crt"
-    - "--key"
-    - "/etc/tls/tls.key"
-    - "--disable-authentication"
-    image:  "squareup/ghostunnel:v1.5.2"
-    imagePullPolicy: IfNotPresent
-    name: ghost-server
-    volumeMounts:
-    - name: inlets-tls
-      mountPath: "/etc/tls"
-      readOnly: true
-    resources:
-      limits:
-        cpu: 50m
-        memory: 128Mi
-      requests:
-        cpu: 20m
-        memory: 64Mi
-  - args:
-    - "sleep"
-    - "8000s"
-    image: busybox
-    imagePullPolicy: IfNotPresent
-    name: debug
-    resources:
-      limits:
-        cpu: 50m
-        memory: 128Mi
-      requests:
-        cpu: 20m
-        memory: 64Mi
-  volumes:
-  - name: inlets-tls
-    secret:
-      secretName: gardener-extension-webhook-cert
-  dnsPolicy: ClusterFirst
-  enableServiceLinks: true
-  restartPolicy: Always
-
+  replicas: 1
+  selector:
+    matchLabels:
+      app: quic-server
+  template:
+    metadata:
+      labels:
+        app: quic-server
+        app.kubernetes.io/instance: provider-$providerName
+        app.kubernetes.io/name: gardener-extension-provider-$providerName
+    spec:
+      containers:
+      - args:
+        - --listen-tcp=0.0.0.0:$quicServerPort
+        - --listen-quic=0.0.0.0:$quicTunnelPort
+        - --cert-file=/certs/tls.crt
+        - --cert-key=/certs/tls.key
+        - --client-ca-file=/certs/ca.crt
+        image: "${QUIC_SERVER_IMAGE}"
+        imagePullPolicy: IfNotPresent
+        name: quic-server
+        volumeMounts:
+        - name: quic-tls
+          mountPath: "/certs"
+          readOnly: true
+        resources:
+          limits:
+            cpu: 50m
+            memory: 128Mi
+          requests:
+            cpu: 20m
+            memory: 64Mi
+      - args:
+        - "sleep"
+        - "8000s"
+        image: alpine
+        imagePullPolicy: IfNotPresent
+        name: debug
+        resources:
+          limits:
+            cpu: 50m
+            memory: 128Mi
+          requests:
+            cpu: 20m
+            memory: 64Mi
+      volumes:
+      - name: quic-tls
+        secret:
+          secretName: ${QUIC_SECRET_NAME}
+      dnsPolicy: ClusterFirst
+      enableServiceLinks: true
+      restartPolicy: Always
 EOF
 }
 
-waitForInletsPodToBeReady(){
+waitForQuicDeployToBeReady(){
     namespace=${1:-}
     [[ -z $namespace ]] && echo "Please specify extension namespace!" && exit 1
 
-    until test "$(kubectl -n $namespace get pods inlets-server --no-headers | awk '{print $2}')" = "3/3"
+    until test "$(kubectl -n $namespace get deploy quic-server --no-headers | awk '{print $2}')" = "1/1"
     do
       sleep 2s
     done
 }
+
+createCerts() {
+  local dir=${1:-}
+  [[ -z $dir ]] && echo "Please specify certs directory!" && exit 1
+
+  mkdir -p $dir
+(
+  cd $dir
+
+  cat > server.conf << EOF
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = localhost
+DNS.2 = quic-tunnel-server
+IP.1 = 127.0.0.1
+EOF
+
+  cat > client.conf << EOF
+[req]
+req_extensions = v3_req
+distinguished_name = req_distinguished_name
+[req_distinguished_name]
+[ v3_req ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+extendedKeyUsage = clientAuth
+EOF
+
+  # Create a certificate authority
+  openssl genrsa -out ca.key 2048
+  openssl req -x509 -new -nodes -key ca.key -days 100000 -out ca.crt -subj "/CN=quic-tunnel-ca"
+
+  # Create a server certiticate
+  openssl genrsa -out tls.key 2048
+  openssl req -new -key tls.key -out server.csr -subj "/CN=quic-tunnel-server" -config server.conf
+  openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out tls.crt -days 100000 -extensions v3_req -extfile server.conf
+
+  # Create a client certiticate
+  openssl genrsa -out client.key 2048
+  openssl req -new -key client.key -out client.csr -subj "/CN=quic-tunnel-client" -config client.conf
+  openssl x509 -req -in client.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out client.crt -days 100000 -extensions v3_req -extfile client.conf
+
+  # Clean up after we're done.
+  rm ./*.csr
+  rm ./*.srl
+  rm ./*.conf
+)
+}
+
+loadCerts() {
+  local certsDir=${1:-}
+  local namespace=${2:-}
+  local secret=${3:-}
+  [[ -z $certsDir ]] && echo "Please specify local certs Dir!" && exit 1
+  [[ -z $namespace ]] && echo "Please specify extension namespace!" && exit 1
+  [[ -z $secret ]] && echo "Please specify webhook secret name!" && exit 1
+
+  # if it already exists, we get rid of it
+  kubectl -n $namespace delete secret $secret 2>/dev/null || true
+
+  # now create it anew
+  (
+  cd $certsDir
+  kubectl -n $namespace create secret generic $secret --from-file=ca.crt --from-file=tls.key --from-file=tls.crt
+  )
+}
+
 
 cleanUP() {
    namespace=${1:-}
@@ -215,16 +291,19 @@ cleanUP() {
 
    echo "cleaning up local-dev setup.."
 
-   echo "Deleting inlets service..."
-   kubectl -n $namespace delete  svc/inlets-lb
+   echo "Deleting quic service..."
+   kubectl -n $namespace delete  svc/quic-lb
 
-   echo "Deleting the inlets pod..."
-   kubectl -n $namespace delete  pod/inlets-server
+   echo "Deleting the quic deploy..."
+   kubectl -n $namespace delete  deploy/quic-server
+
+   echo "Deleting the quic certs..."
+   kubectl -n $namespace delete  secret/quic-tunnel-certs
 
    echo "Re-applying old service values..."
    kubectl apply -f $tmpService
 
-   kill -9 $(pgrep inlets) 2>/dev/null
+   docker kill $QUIC_CLIENT_CONTAINER
    exit 0
 }
 
@@ -238,21 +317,21 @@ usage(){
 
   echo "===================================PRE-REQs========================================="
   echo "\`host\` commands for DNS"
-  echo "\`inlets\` command. For mac, simply use \`brew install inlets\`, for linux \`curl -sLS https://get.inlets.dev | sudo sh\`"
+  echo "\`docker\` https://www.docker.com"
   echo "===================================================================================="
 
   echo ""
 
   echo "========================================================USAGE======================================================================"
-  echo "> ./hack/hook-me.sh <provider e.g., aws> <extension namespace e.g. extension-provider-aws-fpr6w> <webhookserver port e.g., 8443> [<inlets-server port, e.g. 9443>]"
+  echo "> ./hack/hook-me.sh <provider e.g., aws> <extension namespace e.g. extension-provider-aws-fpr6w> <webhookserver port e.g., 8443> [<quic-server port, e.g. 9443>]"
   echo "> \`make EXTENSION_NAMESPACE=<extension namespace e.g. extension-provider-aws-fpr6w> WEBHOOK_CONFIG_MODE=service start\`"
   echo "=================================================================================================================================="
 
   echo ""
 
   echo "===================================CLEAN UP COMMANDS========================================="
-  echo ">  kubectl -n $namespace delete  svc/inlets-lb"
-  echo ">  kubectl -n $namespace delete  pod/inlets-server"
+  echo ">  kubectl -n $namespace delete  svc/quic-lb"
+  echo ">  kubectl -n $namespace delete  deploy/quic-server"
   echo "============================================================================================="
 
   exit 0
@@ -272,8 +351,11 @@ if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
   webhookServerPort=${3:-}
   [[ -z $webhookServerPort ]] && echo "Please specify webhook server port" && exit 1
 
-  inletsServerPort=${4:-}
-  [[ -z $inletsServerPort ]] && echo "inlets-server port not specified, using default port of 9443" && inletsServerPort=9443
+  quicServerPort=${4:-}
+  [[ -z $quicServerPort ]] && echo "quic-server port not specified, using default port of 9443" && quicServerPort=9443
+
+  quicTunnelPort=${5:-}
+  [[ -z $quicTunnelPort ]] && echo "quic-tunnel port not specified, using default port of 9444" && quicTunnelPort=9444
 
 
   trap 'cleanUP $namespace' SIGINT SIGTERM
@@ -285,28 +367,44 @@ if [[ "${BASH_SOURCE[0]}" = "$0" ]]; then
             echo "[STEP 1] Checking Pre-reqs!"
             checkPrereqs
 
-            echo "[STEP 2] Creating Inlets LB Service..!"
-            createInletsLB $namespace && sleep 2s
+            echo "[STEP 2] Creating Quic LB Service..!"
+            createQuicLB $namespace $quicTunnelPort && sleep 2s
 
-            echo "[STEP 3] Waiting for Inlets LB Service to be created..!";
-            output=$(waitForInletsLBToBeReady $namespace $providerName)
+            echo "[STEP 3] Waiting for Quic LB Service to be created..!";
+            output=$(waitForQuicLBToBeReady $namespace $providerName)
             loadbalancerIPOrHostName=$(echo "$output" | tail -n1)
             echo "[Info] LB IP is $loadbalancerIPOrHostName"
 
-            echo "[STEP 4] Creating the server Pod for TLS Termination and Tunneling connection..!";
-            createServerPod $namespace $providerName $inletsServerPort
+            echo "[STEP 4] Creating the CA, client and server keys and certs..!";
+            createCerts $CERTS_DIR
 
-            echo "[STEP 5] Waiting for Inlets Pod to be ready..!";
-            waitForInletsPodToBeReady $namespace
+            echo "[STEP 5] Loading quic tunnel certs into cluster..!";
+            loadCerts $CERTS_DIR $namespace $QUIC_SECRET_NAME
 
-            echo "[STEP 6] Creating WebhookSVC LB..!"
-            createOrUpdateWebhookSVC $namespace $providerName $inletsServerPort
+            echo "[STEP 6] Creating the server Deploy for TLS Termination and Tunneling connection..!";
+            createServerDeploy $namespace $providerName $quicServerPort $quicTunnelPort
 
-            echo "[STEP 7] Initializing the inlets client";
-            echo "[Info] Inlets initialized, you are ready to go ahead and run \"make EXTENSION_NAMESPACE=$namespace WEBHOOK_CONFIG_MODE=service start\""
+            echo "[STEP 7] Waiting for Quic Deploy to be ready..!";
+            waitForQuicDeployToBeReady $namespace
+
+            echo "[STEP 8] Creating WebhookSVC LB..!"
+            createOrUpdateWebhookSVC $namespace $providerName $quicServerPort
+
+            echo "[STEP 9] Initializing the quic client";
+            echo "[Info] Quic initialized, you are ready to go ahead and run \"make EXTENSION_NAMESPACE=$namespace WEBHOOK_CONFIG_MODE=service start\""
             echo "[Info] It will take about 5 seconds for the connection to succeeed!"
 
-            inlets client --remote ws://$loadbalancerIPOrHostName:8000 --upstream https://localhost:$webhookServerPort --token=21d809ed61915c9177fbceeaa87e307e766be5f2
+            echo "[Step 10] Running quic client"
+            docker run \
+              --name ${QUIC_CLIENT_CONTAINER} \
+              --rm \
+              -v "$CERTS_DIR":/certs \
+              $QUIC_CLIENT_IMAGE \
+              --server="$loadbalancerIPOrHostName:$quicTunnelPort" \
+              --upstream="host.docker.internal:$webhookServerPort" \
+              --ca-file=/certs/ca.crt \
+              --cert-file=/certs/client.crt \
+              --cert-key=/certs/client.key
         ;;
         [Nn]* ) echo "You need to set  \`ignoreResources\` to true and generate the controller installlation first in your extension chart before proceeding!"; exit;;
         * ) echo "Please answer yes or no.";;
