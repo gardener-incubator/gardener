@@ -31,6 +31,7 @@ import (
 	druidv1alpha1 "github.com/gardener/etcd-druid/api/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
@@ -149,6 +150,11 @@ func (b *bootstrapper) Deploy(ctx context.Context) error {
 					APIGroups: []string{corev1.GroupName},
 					Resources: []string{"persistentvolumeclaims"},
 					Verbs:     []string{"get", "list", "watch"},
+				},
+				{
+					APIGroups: []string{batchv1beta1.GroupName},
+					Resources: []string{"cronjobs"},
+					Verbs:     []string{"get", "list", "patch", "update", "watch", "create", "delete"},
 				},
 			},
 		}
